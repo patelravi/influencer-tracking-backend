@@ -1,9 +1,9 @@
 import mongoose, { Schema, Document } from 'mongoose';
-import { Platform } from '../enums/platform';
+import { PlatformType } from '../utils/const';
 
 export interface IInfluencer extends Document {
     name: string;
-    platform: Platform;
+    platform: PlatformType;
     handle: string;
     userId: mongoose.Types.ObjectId; // User who added the influencer
     organizationId: mongoose.Types.ObjectId; // Organization tracking the influencer
@@ -24,7 +24,7 @@ const InfluencerSchema: Schema = new Schema({
     platform: {
         type: String,
         required: true,
-        enum: Object.values(Platform),
+        enum: Object.values(PlatformType),
     },
     handle: {
         type: String,

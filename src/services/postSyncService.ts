@@ -5,6 +5,7 @@ import { YouTubeService } from './youtubeService';
 import { InstagramService } from './instagramService';
 import { LinkedInScraperService } from './linkedInScraperService';
 import { Logger } from '../utils/logger';
+import { PlatformType } from '../utils/const';
 
 export class PostSyncService {
     // Sync posts for a single influencer
@@ -20,16 +21,16 @@ export class PostSyncService {
             let posts: any[] = [];
 
             switch (influencer.platform) {
-                case 'X':
+                case PlatformType.X:
                     posts = await this.syncXPosts(influencer);
                     break;
-                case 'YouTube':
+                case PlatformType.YouTube:
                     posts = await this.syncYouTubePosts(influencer);
                     break;
-                case 'Instagram':
+                case PlatformType.Instagram:
                     posts = await this.syncInstagramPosts(influencer);
                     break;
-                case 'LinkedIn':
+                case PlatformType.LinkedIn:
                     posts = await this.syncLinkedInPosts(influencer.handle);
                     break;
                 default:
@@ -144,31 +145,31 @@ export class PostSyncService {
     /**
    * Build profile URL from platform and handle
    */
-    private buildProfileUrl(platform: string, handle: string): string {
+    private buildProfileUrl(platform: PlatformType, handle: string): string {
         // Remove @ symbol if present
         const cleanHandle = handle.startsWith('@') ? handle.substring(1) : handle;
 
         switch (platform) {
-            case 'LinkedIn':
+            case PlatformType.LinkedIn:
                 // Handle can be company URL or profile URL
                 if (cleanHandle.includes('linkedin.com')) {
                     return cleanHandle;
                 }
                 return `https://www.linkedin.com/in/${cleanHandle}`;
 
-            case 'Instagram':
+            case PlatformType.Instagram:
                 if (cleanHandle.includes('instagram.com')) {
                     return cleanHandle;
                 }
                 return `https://www.instagram.com/${cleanHandle}`;
 
-            case 'YouTube':
+            case PlatformType.YouTube:
                 if (cleanHandle.includes('youtube.com')) {
                     return cleanHandle;
                 }
                 return `https://www.youtube.com/@${cleanHandle}`;
 
-            case 'X':
+            case PlatformType.X:
                 if (cleanHandle.includes('twitter.com') || cleanHandle.includes('x.com')) {
                     return cleanHandle;
                 }
@@ -183,7 +184,7 @@ export class PostSyncService {
     private async syncLinkedInPosts(handle: string): Promise<any[]> {
         try {
 
-            const profileUrl = this.buildProfileUrl("LinkedIn", handle)
+            const profileUrl = this.buildProfileUrl(PlatformType.LinkedIn, handle)
             Logger.info(`Scraping LinkedIn posts from: ${profileUrl}`);
 
             // Use Bright Data API to scrape posts
