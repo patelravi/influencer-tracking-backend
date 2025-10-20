@@ -38,6 +38,7 @@ app.post('/scrap-webhook', async (req, res) => {
     res.json({ status: 'ok' });
   } catch (err) {
     console.error('Error: Webhook to pubsub push failed. Payload:', JSON.stringify(req.body));
+    console.error('Error Detail: ', err);
   }
 });
 
