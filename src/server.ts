@@ -13,6 +13,7 @@ import { PostController } from './controllers/postController';
 import { InfluencerController } from './controllers/influencerController';
 import { SubscriptionController } from './controllers/subscriptionController';
 import { OrganizationController } from './controllers/organizationController';
+import { authenticate } from './middleware/auth';
 
 
 class Server {
@@ -100,10 +101,10 @@ class Server {
 
         // Mount routes using controller classes
         routes.use('/auth', new AuthController().buildRouter());
-        routes.use('/influencers', new InfluencerController().buildRouter());
-        routes.use('/posts', new PostController().buildRouter());
-        routes.use('/subscription', new SubscriptionController().buildRouter());
-        routes.use('/organization', new OrganizationController().buildRouter());
+        routes.use('/influencers', authenticate, new InfluencerController().buildRouter());
+        routes.use('/posts', authenticate, new PostController().buildRouter());
+        routes.use('/subscription', authenticate, new SubscriptionController().buildRouter());
+        routes.use('/organization', authenticate, new OrganizationController().buildRouter());
 
         // Health check
         routes.get('/health', (req, res) => {

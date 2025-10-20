@@ -1,9 +1,8 @@
 import { InfluencerModel } from '../models/InfluencerModel';
 import { PostModel } from '../models/PostModel';
 import { XService } from './xService';
-import { YouTubeService } from './youtubeService';
-import { InstagramService } from './instagramService';
 import { LinkedInScraperService } from './linkedInScraperService';
+import { ProfileSyncService } from './profileSyncService';
 import { Logger } from '../utils/logger';
 import { PlatformType } from '../utils/const';
 
@@ -18,23 +17,43 @@ export class PostSyncService {
                 return 0;
             }
 
-            let posts: any[] = [];
+            // Check if posts are already being synced
+            if (influencer.isPostSyncing) {
+                Logger.warn(`Posts already being synced for influencer: ${influencerId}`);
+                return 0;
+            }
+
+            // Set post syncing flag
+            await InfluencerModel.updateOne(
+                { _id: influencerId },
+                {
+                    $set: {
+                        isPostSyncing: true,
+                        lastSyncAttempt: new Date()
+                    }
+                }
+            );
+
+            let posts: Array<{
+                platformPostId: string;
+                content: string;
+                postUrl: string;
+                likes: number;
+                comments: number;
+                shares: number;
+                postedAt: Date;
+                mediaUrls: string[];
+            }> = [];
 
             switch (influencer.platform) {
                 case PlatformType.X:
                     posts = await this.syncXPosts(influencer);
                     break;
-                case PlatformType.YouTube:
-                    posts = await this.syncYouTubePosts(influencer);
-                    break;
-                case PlatformType.Instagram:
-                    posts = await this.syncInstagramPosts(influencer);
-                    break;
                 case PlatformType.LinkedIn:
                     posts = await this.syncLinkedInPosts(influencer.handle);
                     break;
                 default:
-                    Logger.warn(`Unknown platform: ${influencer.platform}`);
+                    Logger.warn(`Unsupported platform: ${influencer.platform}`);
             }
 
             // Save new posts to database
@@ -59,10 +78,31 @@ export class PostSyncService {
         } catch (error) {
             Logger.error(`Error syncing posts for influencer ${influencerId}:`, error);
             return 0;
+        } finally {
+            // Always clear the syncing flag
+            await InfluencerModel.updateOne(
+                { _id: influencerId },
+                { $set: { isPostSyncing: false } }
+            );
         }
     }
 
-    private async syncXPosts(influencer: any): Promise<any[]> {
+    private async syncXPosts(influencer: {
+        _id: any;
+        platformUserId?: string;
+        handle: string;
+        platform: string;
+        name: string;
+    }): Promise<Array<{
+        platformPostId: string;
+        content: string;
+        postUrl: string;
+        likes: number;
+        comments: number;
+        shares: number;
+        postedAt: Date;
+        mediaUrls: string[];
+    }>> {
         try {
             // Get or fetch platform user ID
             let platformUserId = influencer.platformUserId;
@@ -92,56 +132,6 @@ export class PostSyncService {
         }
     }
 
-    private async syncYouTubePosts(influencer: any): Promise<any[]> {
-        try {
-            // Get or fetch platform user ID
-            let platformUserId = influencer.platformUserId;
-
-            const youtubeService = new YouTubeService();
-            if (!platformUserId) {
-                const channel = await youtubeService.getChannelByHandle(influencer.handle);
-                if (channel) {
-                    platformUserId = channel.id;
-                    // Update influencer with platform user ID
-                    await InfluencerModel.updateOne(
-                        { _id: influencer._id },
-                        {
-                            platformUserId,
-                            avatarUrl: channel.snippet.thumbnails.default.url,
-                        }
-                    );
-                }
-            }
-
-            if (!platformUserId) {
-                Logger.warn(`Could not find YouTube channel: ${influencer.handle}`);
-                return [];
-            }
-
-            return await youtubeService.getChannelVideos(platformUserId, 10);
-        } catch (error) {
-            Logger.error(`Error syncing YouTube posts for ${influencer.handle}:`, error);
-            return [];
-        }
-    }
-
-    private async syncInstagramPosts(influencer: any): Promise<any[]> {
-        try {
-            const platformUserId = influencer.platformUserId;
-
-            if (!platformUserId) {
-                Logger.warn(`Instagram requires platform user ID to be set manually for ${influencer.handle}`);
-                return [];
-            }
-
-            const instagramService = new InstagramService();
-            return await instagramService.getUserMedia(platformUserId, 20);
-        } catch (error) {
-            Logger.error(`Error syncing Instagram posts for ${influencer.handle}:`, error);
-            return [];
-        }
-    }
-
     /**
    * Build profile URL from platform and handle
    */
@@ -157,18 +147,6 @@ export class PostSyncService {
                 }
                 return `https://www.linkedin.com/in/${cleanHandle}`;
 
-            case PlatformType.Instagram:
-                if (cleanHandle.includes('instagram.com')) {
-                    return cleanHandle;
-                }
-                return `https://www.instagram.com/${cleanHandle}`;
-
-            case PlatformType.YouTube:
-                if (cleanHandle.includes('youtube.com')) {
-                    return cleanHandle;
-                }
-                return `https://www.youtube.com/@${cleanHandle}`;
-
             case PlatformType.X:
                 if (cleanHandle.includes('twitter.com') || cleanHandle.includes('x.com')) {
                     return cleanHandle;
@@ -180,8 +158,16 @@ export class PostSyncService {
         }
     }
 
-
-    private async syncLinkedInPosts(handle: string): Promise<any[]> {
+    private async syncLinkedInPosts(handle: string): Promise<Array<{
+        platformPostId: string;
+        content: string;
+        postUrl: string;
+        likes: number;
+        comments: number;
+        shares: number;
+        postedAt: Date;
+        mediaUrls: string[];
+    }>> {
         try {
 
             const profileUrl = this.buildProfileUrl(PlatformType.LinkedIn, handle)
@@ -214,6 +200,51 @@ export class PostSyncService {
             Logger.info(`Sync completed. Total new posts: ${totalSynced}`);
         } catch (error) {
             Logger.error('Error in syncAllInfluencers:', error);
+        }
+    }
+
+    // Sync both posts and profile data for a single influencer
+    async syncInfluencerData(influencerId: string): Promise<{ postsSynced: number; profileSynced: boolean }> {
+        try {
+            Logger.info(`Starting complete data sync for influencer: ${influencerId}`);
+
+            // Sync posts first
+            const postsSynced = await this.syncInfluencerPosts(influencerId);
+
+            // Then sync profile data
+            const profileSyncService = new ProfileSyncService();
+            const profileSynced = await profileSyncService.syncInfluencerProfile(influencerId);
+
+            Logger.info(`Complete sync finished for influencer ${influencerId}: ${postsSynced} posts, profile: ${profileSynced ? 'updated' : 'failed'}`);
+
+            return { postsSynced, profileSynced };
+        } catch (error) {
+            Logger.error(`Error in complete sync for influencer ${influencerId}:`, error);
+            return { postsSynced: 0, profileSynced: false };
+        }
+    }
+
+    // Sync both posts and profile data for all influencers
+    async syncAllInfluencerData(): Promise<void> {
+        try {
+            const influencers = await InfluencerModel.find();
+            Logger.info(`Starting complete data sync for ${influencers.length} influencers`);
+
+            let totalPostsSynced = 0;
+            let totalProfilesSynced = 0;
+
+            for (const influencer of influencers) {
+                const result = await this.syncInfluencerData(String(influencer._id));
+                totalPostsSynced += result.postsSynced;
+                if (result.profileSynced) totalProfilesSynced++;
+
+                // Add delay to avoid rate limiting
+                await this.delay(1000);
+            }
+
+            Logger.info(`Complete sync finished. Posts: ${totalPostsSynced}, Profiles: ${totalProfilesSynced}`);
+        } catch (error) {
+            Logger.error('Error in syncAllInfluencerData:', error);
         }
     }
 

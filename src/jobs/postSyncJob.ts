@@ -35,9 +35,19 @@ export class PostSyncJob {
                             await postSyncService.syncAllInfluencers();
                             break;
 
+                        case 'sync-all-data':
+                            await postSyncService.syncAllInfluencerData();
+                            break;
+
                         case 'sync-influencer': {
                             const { influencerId } = job.data;
                             await postSyncService.syncInfluencerPosts(influencerId);
+                            break;
+                        }
+
+                        case 'sync-influencer-data': {
+                            const { influencerId } = job.data;
+                            await postSyncService.syncInfluencerData(influencerId);
                             break;
                         }
 
@@ -83,9 +93,9 @@ export class PostSyncJob {
                 await this.queue.removeRepeatableByKey(job.key);
             }
 
-            // Add new repeatable job
+            // Add new repeatable job for complete data sync (posts + profiles)
             await this.queue.add(
-                'sync-all-influencers',
+                'sync-all-data',
                 {},
                 {
                     repeat: {
@@ -94,7 +104,7 @@ export class PostSyncJob {
                 }
             );
 
-            Logger.info('Scheduled recurring post sync job (every 3 hours)');
+            Logger.info('Scheduled recurring complete data sync job (posts + profiles every 3 hours)');
         } catch (error) {
             Logger.error('Error scheduling recurring sync:', error);
             throw error;

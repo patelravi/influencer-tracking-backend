@@ -1,0 +1,8 @@
+### Scrap webhook
+
+POST http://localhost:6429/scrap-webhook
+content-type: application/json
+
+{
+    "message": "Hello, world!"
+}

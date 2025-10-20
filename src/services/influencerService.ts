@@ -1,8 +1,9 @@
 import { InfluencerModel } from '../models/InfluencerModel';
 import { PostSyncService } from './postSyncService';
-import { ProfileScraperService } from './profileScraperService';
 import { Logger } from '../utils/logger';
 import { URLParser } from '../utils/urlParser';
+import { PlatformType } from '../utils/const';
+import { PostModel } from '../models/PostModel';
 
 export interface AddInfluencerData {
     name?: string;
@@ -13,6 +14,11 @@ export interface AddInfluencerData {
 }
 
 export interface InfluencerResult {
+    influencers: any[];
+    count: number;
+}
+
+export interface ServiceResult {
     success: boolean;
     data?: any;
     error?: string;
@@ -20,13 +26,13 @@ export interface InfluencerResult {
 }
 
 export class InfluencerService {
-    private readonly validPlatforms = Object.values(Platform);
+    private readonly validPlatforms = Object.values(PlatformType);
 
     /**
      * Validates platform input
      */
     private validatePlatform(platform: string): boolean {
-        return this.validPlatforms.includes(platform);
+        return this.validPlatforms.includes(platform as PlatformType);
     }
 
     /**
@@ -68,128 +74,64 @@ export class InfluencerService {
         return !!existing;
     }
 
-    /**
-     * Fetches profile data from external service
-     */
-    private async fetchProfileData(platform: string, handle: string): Promise<any> {
-        try {
-            const profileScraper = new ProfileScraperService();
-            const profileData = await profileScraper.fetchProfileData(platform as any, handle);
-
-            if (profileData) {
-                Logger.info(`Profile data fetched for ${handle}: ${JSON.stringify(profileData)}`);
-            }
-
-            return profileData;
-        } catch (error) {
-            Logger.warn(`Failed to fetch profile data for ${handle}, continuing with provided data:`, error);
-            return null;
-        }
-    }
-
-    /**
-     * Triggers initial post sync for new influencer
-     */
-    private async triggerInitialSync(influencerId: string, name: string): Promise<void> {
-        const postSyncService = new PostSyncService();
-        postSyncService.syncInfluencerPosts(influencerId)
-            .then((syncedCount) => {
-                Logger.info(`Initial sync completed for ${name}: ${syncedCount} posts synced`);
-            })
-            .catch((error) => {
-                Logger.error(`Initial sync failed for ${name}:`, error);
-            });
-    }
 
     /**
      * Adds a new influencer to the organization
      */
-    async addInfluencer(data: AddInfluencerData): Promise<InfluencerResult> {
-        try {
-            const { name, platform, profileUrl, userId, organizationId } = data;
+    async addInfluencer(data: AddInfluencerData): Promise<{
+        message: string, influencer: any
+    }> {
+        const { name, platform, profileUrl, userId, organizationId } = data;
 
-            // Validate required fields
-            if (!this.validateRequiredFields(platform, profileUrl)) {
-                return {
-                    success: false,
-                    error: 'Platform and profile URL are required',
-                    statusCode: 400
-                };
-            }
+        // Validate required fields
+        if (!this.validateRequiredFields(platform, profileUrl)) {
+            throw new Error('Platform and profile URL are required');
+        }
 
-            // Validate platform
-            if (!this.validatePlatform(platform)) {
-                return {
-                    success: false,
-                    error: 'Invalid platform',
-                    statusCode: 400
-                };
-            }
+        // Validate platform
+        if (!this.validatePlatform(platform)) {
+            throw new Error('Invalid platform.');
+        }
 
-            // Extract handle from profile URL
-            const handle = this.extractHandle(platform, profileUrl);
+        // Extract handle from profile URL
+        const handle = this.extractHandle(platform, profileUrl);
 
-            // Check for duplicates within the organization
-            const isDuplicate = await this.checkDuplicateInfluencer(organizationId, platform, handle);
-            if (isDuplicate) {
-                return {
-                    success: false,
-                    error: 'This influencer is already being tracked by your organization',
-                    statusCode: 409
-                };
-            }
+        // Check for duplicates within the organization
+        const isDuplicate = await this.checkDuplicateInfluencer(organizationId, platform, handle);
+        if (isDuplicate) {
+            throw new Error('This influencer is already being tracked by your organization.');
+        }
 
-            // Fetch profile data from external service
-            const profileData = await this.fetchProfileData(platform, handle);
+        // Ensure we have a name (required field)
+        if (!name) {
+            throw new Error('Name is required for the influencer.');
+        }
 
-            // Determine final name (use fetched name if not provided by user)
-            let finalName = name;
-            if (!finalName && profileData?.name) {
-                finalName = profileData.name;
-            }
+        // Create influencer with basic data (profile data will be synced in background)
+        const influencer = await InfluencerModel.create({
+            name,
+            platform,
+            handle,
+            userId,
+            organizationId,
+            // Profile data will be populated by background sync
+        });
 
-            // Ensure we have a name
-            if (!finalName) {
-                return {
-                    success: false,
-                    error: 'Name is required (could not auto-fetch from profile)',
-                    statusCode: 400
-                };
-            }
+        Logger.info(`Influencer added: ${name} (${platform})`);
 
-            // Create influencer with fetched profile data
-            const influencer = await InfluencerModel.create({
-                name: finalName,
-                platform,
-                handle,
-                userId,
-                organizationId,
-                platformUserId: profileData?.platformUserId,
-                avatarUrl: profileData?.avatarUrl,
-                bio: profileData?.bio,
-                followerCount: profileData?.followerCount,
-                verified: profileData?.verified,
+        // Sync both posts and profile data in background
+        const postSyncService = new PostSyncService();
+        postSyncService.syncInfluencerData(String(influencer._id))
+            .then((result) => {
+                Logger.info(`Initial sync completed for ${name}: ${result.postsSynced} posts, profile: ${result.profileSynced ? 'updated' : 'failed'}`);
+            })
+            .catch((error) => {
+                Logger.error(`Initial sync failed for ${name}:`, error);
             });
 
-            Logger.info(`Influencer added: ${finalName} (${platform})`);
-
-            // Trigger initial post sync
-            await this.triggerInitialSync(String(influencer._id), finalName);
-
-            return {
-                success: true,
-                data: {
-                    message: 'Influencer added successfully. Profile data fetched and posts are being synced in the background.',
-                    influencer
-                }
-            };
-        } catch (error) {
-            Logger.error('Add influencer error:', error);
-            return {
-                success: false,
-                error: 'Failed to add influencer',
-                statusCode: 500
-            };
+        return {
+            message: 'Influencer added successfully. Profile data and posts are being synced in the background.',
+            influencer
         }
     }
 
@@ -197,32 +139,20 @@ export class InfluencerService {
      * Gets all influencers for an organization
      */
     async getInfluencers(organizationId: string): Promise<InfluencerResult> {
-        try {
-            const influencers = await InfluencerModel.find({ organizationId }).sort({
-                createdAt: -1,
-            });
+        const influencers = await InfluencerModel.find({ organizationId }).sort({
+            createdAt: -1,
+        });
 
-            return {
-                success: true,
-                data: {
-                    influencers,
-                    count: influencers.length,
-                }
-            };
-        } catch (error) {
-            Logger.error('Get influencers error:', error);
-            return {
-                success: false,
-                error: 'Failed to fetch influencers',
-                statusCode: 500
-            };
-        }
+        return {
+            influencers,
+            count: influencers.length,
+        };
     }
 
     /**
      * Deletes an influencer from the organization
      */
-    async deleteInfluencer(influencerId: string, organizationId: string): Promise<InfluencerResult> {
+    async deleteInfluencer(influencerId: string, organizationId: string): Promise<ServiceResult> {
         try {
             // Find influencer within the organization
             const influencer = await InfluencerModel.findOne({
@@ -239,6 +169,8 @@ export class InfluencerService {
             }
 
             await InfluencerModel.deleteOne({ _id: influencerId });
+            // remove posts also of influencer.
+            await PostModel.deleteMany({ influencerId: influencerId });
 
             Logger.info(`Influencer deleted: ${influencer.name}`);
 
@@ -259,9 +191,46 @@ export class InfluencerService {
     }
 
     /**
+     * Checks if an influencer is currently syncing
+     */
+    async isInfluencerSyncing(influencerId: string, organizationId: string): Promise<ServiceResult> {
+        try {
+            const influencer = await InfluencerModel.findOne({
+                _id: influencerId,
+                organizationId,
+            });
+
+            if (!influencer) {
+                return {
+                    success: false,
+                    error: 'Influencer not found',
+                    statusCode: 404
+                };
+            }
+
+            return {
+                success: true,
+                data: {
+                    isPostSyncing: influencer.isPostSyncing || false,
+                    isProfileSyncing: influencer.isProfileSyncing || false,
+                    lastSyncAttempt: influencer.lastSyncAttempt,
+                    lastProfileSync: influencer.lastProfileSync,
+                }
+            };
+        } catch (error) {
+            Logger.error('Check sync status error:', error);
+            return {
+                success: false,
+                error: 'Failed to check sync status',
+                statusCode: 500
+            };
+        }
+    }
+
+    /**
      * Syncs posts for a specific influencer
      */
-    async syncInfluencerPosts(influencerId: string, organizationId: string): Promise<InfluencerResult> {
+    async syncInfluencerPosts(influencerId: string, organizationId: string): Promise<ServiceResult> {
         try {
             // Find influencer within the organization
             const influencer = await InfluencerModel.findOne({
@@ -274,6 +243,15 @@ export class InfluencerService {
                     success: false,
                     error: 'Influencer not found',
                     statusCode: 404
+                };
+            }
+
+            // Check if already syncing
+            if (influencer.isPostSyncing) {
+                return {
+                    success: false,
+                    error: 'Posts are already being synced for this influencer',
+                    statusCode: 409
                 };
             }
 
@@ -305,6 +283,67 @@ export class InfluencerService {
             return {
                 success: false,
                 error: 'Failed to sync posts',
+                statusCode: 500
+            };
+        }
+    }
+
+    /**
+     * Syncs complete data (posts and profile) for a specific influencer
+     */
+    async syncInfluencerData(influencerId: string, organizationId: string): Promise<ServiceResult> {
+        try {
+            // Find influencer within the organization
+            const influencer = await InfluencerModel.findOne({
+                _id: influencerId,
+                organizationId,
+            });
+
+            if (!influencer) {
+                return {
+                    success: false,
+                    error: 'Influencer not found',
+                    statusCode: 404
+                };
+            }
+
+            // Check if already syncing
+            if (influencer.isPostSyncing || influencer.isProfileSyncing) {
+                return {
+                    success: false,
+                    error: 'Data is already being synced for this influencer',
+                    statusCode: 409
+                };
+            }
+
+            Logger.info(`Starting complete data sync for ${influencer.name} (${influencer.platform})`);
+
+            // Trigger complete sync in the background
+            const postSyncService = new PostSyncService();
+            postSyncService.syncInfluencerData(String(influencer._id))
+                .then((result) => {
+                    Logger.info(`Complete sync finished for ${influencer.name}: ${result.postsSynced} posts, profile: ${result.profileSynced ? 'updated' : 'failed'}`);
+                })
+                .catch((error) => {
+                    Logger.error(`Complete sync failed for ${influencer.name}:`, error);
+                });
+
+            return {
+                success: true,
+                data: {
+                    message: 'Complete data sync started successfully',
+                    influencer: {
+                        id: influencer._id,
+                        name: influencer.name,
+                        platform: influencer.platform,
+                    },
+                }
+            };
+        } catch (error) {
+            Logger.error('Sync influencer data error:', error);
+            return {
+                success: false,
+                error: 'Failed to sync data',
                 statusCode: 500
             };
         }

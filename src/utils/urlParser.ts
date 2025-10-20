@@ -16,10 +16,6 @@ export class URLParser {
         switch (platform) {
             case 'X':
                 return this.extractXHandle(cleaned);
-            case 'YouTube':
-                return this.extractYouTubeHandle(cleaned);
-            case 'Instagram':
-                return this.extractInstagramHandle(cleaned);
             case 'LinkedIn':
                 return this.extractLinkedInHandle(cleaned);
             default:
@@ -42,54 +38,6 @@ export class URLParser {
         return input.replace('@', '');
     }
 
-    /**
-     * Extract YouTube handle from URL
-     * Supports: youtube.com/@handle, youtube.com/c/handle, youtube.com/channel/ID
-     */
-    private static extractYouTubeHandle(input: string): string {
-        // Pattern: youtube.com/@handle
-        let match = input.match(/youtube\.com\/@([a-zA-Z0-9_-]+)/);
-        if (match) {
-            return match[1];
-        }
-
-        // Pattern: youtube.com/c/handle
-        match = input.match(/youtube\.com\/c\/([a-zA-Z0-9_-]+)/);
-        if (match) {
-            return match[1];
-        }
-
-        // Pattern: youtube.com/channel/CHANNEL_ID
-        match = input.match(/youtube\.com\/channel\/([a-zA-Z0-9_-]+)/);
-        if (match) {
-            return match[1];
-        }
-
-        // Pattern: youtu.be links (not common for profiles, but handle it)
-        match = input.match(/youtu\.be\/([a-zA-Z0-9_-]+)/);
-        if (match) {
-            return match[1];
-        }
-
-        // If no match, assume it's already a handle
-        return input.replace('@', '');
-    }
-
-    /**
-     * Extract Instagram handle from URL
-     * Supports: instagram.com/username
-     */
-    private static extractInstagramHandle(input: string): string {
-        // Pattern: instagram.com/username
-        const match = input.match(/instagram\.com\/([a-zA-Z0-9._]+)/);
-        if (match) {
-            // Remove trailing slash if present
-            return match[1].replace(/\/$/, '');
-        }
-
-        // If no match, assume it's already a handle
-        return input.replace('@', '');
-    }
 
     /**
      * Extract LinkedIn handle from URL

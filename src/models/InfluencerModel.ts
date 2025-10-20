@@ -12,6 +12,10 @@ export interface IInfluencer extends Document {
     bio?: string; // Profile bio/description
     followerCount?: number; // Number of followers/subscribers
     verified?: boolean; // Whether the account is verified
+    lastProfileSync?: Date; // Last time profile data was synced
+    isPostSyncing?: boolean; // Whether posts are currently being synced
+    isProfileSyncing?: boolean; // Whether profile is currently being synced
+    lastSyncAttempt?: Date; // Last time any sync was attempted
     createdAt: Date;
 }
 
@@ -58,6 +62,20 @@ const InfluencerSchema: Schema = new Schema({
         type: Boolean,
         default: false,
     },
+    lastProfileSync: {
+        type: Date,
+    },
+    isPostSyncing: {
+        type: Boolean,
+        default: false,
+    },
+    isProfileSyncing: {
+        type: Boolean,
+        default: false,
+    },
+    lastSyncAttempt: {
+        type: Date,
+    },
     createdAt: {
         type: Date,
         default: Date.now,
@@ -67,6 +85,8 @@ const InfluencerSchema: Schema = new Schema({
 // Compound index for organization's influencers and preventing duplicates
 InfluencerSchema.index({ organizationId: 1, platform: 1, handle: 1 }, { unique: true });
 InfluencerSchema.index({ userId: 1 });
+// Index for sync status queries
+InfluencerSchema.index({ isPostSyncing: 1, isProfileSyncing: 1 });
 
 export const InfluencerModel = mongoose.model<IInfluencer>('Influencer', InfluencerSchema);
 

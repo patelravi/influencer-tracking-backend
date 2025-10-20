@@ -76,7 +76,7 @@ export class SubscriptionController {
 
             // Create Stripe checkout session
             const organizationId = (req as any).organizationId;
-            const session = await getStripeInstance().checkout.sessions.create({
+            const session = await this.getStripeInstance().checkout.sessions.create({
                 payment_method_types: ['card'],
                 line_items: [
                     {

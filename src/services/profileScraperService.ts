@@ -24,13 +24,12 @@ export class ProfileScraperService {
     private apiToken: string;
     private webScraperUrl = 'https://api.brightdata.com/datasets/v3';
 
-    // BrightData dataset IDs for different platforms
+    // BrightData dataset IDs for supported platforms
     private datasets = {
         LinkedIn: {
             Post: 'gd_lpl42d21kip61030r', // LinkedIn posts dataset
             LinkedInProfile: 'gd_l1viktl72bvl7bjuj0', // LinkedIn profiles dataset
-        }, Instagram: 'gd_l7q7dkf244hwzny1p', // Instagram profiles dataset
-        YouTube: 'gd_lwb9ubreathqo5rp', // YouTube channels dataset
+        },
         X: 'gd_lhkle8ukh1bqqrir4', // X/Twitter profiles dataset
     };
 
@@ -41,7 +40,7 @@ export class ProfileScraperService {
     /**
      * Fetch profile data for an influencer based on platform and handle
      */
-    async fetchProfileData(platform: 'LinkedIn' | 'X' | 'YouTube' | 'Instagram', handle: string): Promise<ProfileData | null> {
+    async fetchProfileData(platform: 'LinkedIn' | 'X', handle: string): Promise<ProfileData | null> {
         try {
             if (!this.apiToken) {
                 Logger.warn('Cannot fetch profile data: BrightData API token not configured');
@@ -88,18 +87,6 @@ export class ProfileScraperService {
                 }
                 return `https://www.linkedin.com/in/${cleanHandle}`;
 
-            case 'Instagram':
-                if (cleanHandle.includes('instagram.com')) {
-                    return cleanHandle;
-                }
-                return `https://www.instagram.com/${cleanHandle}`;
-
-            case 'YouTube':
-                if (cleanHandle.includes('youtube.com')) {
-                    return cleanHandle;
-                }
-                return `https://www.youtube.com/@${cleanHandle}`;
-
             case 'X':
                 if (cleanHandle.includes('twitter.com') || cleanHandle.includes('x.com')) {
                     return cleanHandle;
@@ -121,12 +108,6 @@ export class ProfileScraperService {
         if (platform === 'LinkedIn') {
             url = `${this.webScraperUrl}/trigger?dataset_id=gd_l1viktl72bvl7bjuj0&include_errors=true`;
             payload = JSON.stringify([{ url: profileUrl }]);
-        } else if (platform === 'Instagram') {
-            url = `${this.webScraperUrl}/trigger?dataset_id=${datasetId}&include_errors=true&type=discover_new&discover_by=profile_url`;
-            payload = JSON.stringify([profileUrl]);
-        } else if (platform === 'YouTube') {
-            url = `${this.webScraperUrl}/trigger?dataset_id=${datasetId}&include_errors=true&type=discover_new&discover_by=channel_url`;
-            payload = JSON.stringify([profileUrl]);
         } else if (platform === 'X') {
             url = `${this.webScraperUrl}/trigger?dataset_id=${datasetId}&include_errors=true`;
             payload = JSON.stringify([profileUrl]);
@@ -209,30 +190,6 @@ export class ProfileScraperService {
                     followerCount: this.parseNumber(profile.followers || profile.follower_count || profile.connections),
                     verified: profile.verified || false,
                     location: profile.city || profile.location || ''
-                };
-
-            case 'Instagram':
-                return {
-                    name: profile.full_name || profile.name || profile.username || '',
-                    avatarUrl: profile.profile_pic_url || profile.profile_picture || profile.avatar,
-                    platformUserId: profile.user_id || profile.id || profile.pk,
-                    bio: profile.biography || profile.bio,
-                    followerCount: this.parseNumber(profile.follower_count || profile.followers),
-                    verified: profile.is_verified || profile.verified || false,
-                    location: '',
-                    profileUrl: ''
-                };
-
-            case 'YouTube':
-                return {
-                    name: profile.channel_name || profile.title || profile.name || '',
-                    avatarUrl: profile.thumbnail || profile.channel_thumbnail || profile.avatar,
-                    platformUserId: profile.channel_id || profile.id,
-                    bio: profile.description || profile.about,
-                    followerCount: this.parseNumber(profile.subscriber_count || profile.subscribers),
-                    verified: profile.verified || profile.is_verified || false,
-                    location: '',
-                    profileUrl: ''
                 };
 
             case 'X':
