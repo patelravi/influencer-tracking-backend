@@ -11,9 +11,6 @@ RUN npm ci --only=production
 # Copy source code
 COPY . .
 
-# Build TypeScript
-RUN npm run build
-
 ENV PORT=8080
 
 # Expose port

@@ -52,6 +52,7 @@ app.get('/health', (req, res) => {
 });
 
 const PORT = process.env.PORT || 6429;
+console.log('Start server at port:', PORT);
 app.listen(PORT, () => {
   console.log(`Webhook server running on port ${PORT}`);
 });
