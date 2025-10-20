@@ -9,7 +9,8 @@
     "build-watch": "tsc --watch",
     "start": "node dist/server.js",
     "lint": "eslint . --ext .ts",
-    "format": "prettier --write \"src/**/*.ts\""
+    "format": "prettier --write \"src/**/*.ts\"",
+    "k8s-webhook": "node webhook.js"
   },
   "keywords": [],
   "author": "",
