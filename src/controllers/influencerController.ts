@@ -9,8 +9,8 @@ export class InfluencerController {
         router.post('/', checkInfluencerLimit, this.addInfluencer.bind(this));
         router.get('/', this.getInfluencers.bind(this));
         router.delete('/:id', this.deleteInfluencer.bind(this));
-        router.post('/:id/sync', this.syncInfluencerPosts.bind(this));
-        router.post('/:id/sync-data', this.syncInfluencerData.bind(this));
+        router.post('/:id/sync', this.syncPosts.bind(this));
+        router.post('/:id/sync-data', this.syncProfile.bind(this));
         router.get('/:id/sync-status', this.getSyncStatus.bind(this));
 
         return router;
@@ -23,7 +23,7 @@ export class InfluencerController {
             const organizationId = (req as any).organizationId!;
 
             const influencerService = new InfluencerService();
-            const result = await influencerService.addInfluencer({
+            await influencerService.addInfluencer({
                 name,
                 platform,
                 profileUrl,
@@ -31,7 +31,9 @@ export class InfluencerController {
                 organizationId,
             });
 
-            res.status(201).json(result);
+            res.status(201).json({
+                message: 'Influencer added successfully. Profile data and posts are being synced in the background.'
+            });
         } catch (error) {
             console.error('Add influencer error:', error);
             res.status(500).json({ error: error instanceof Error ? error.message : 'Failed to add influencer' });
@@ -58,45 +60,39 @@ export class InfluencerController {
             const organizationId = (req as any).organizationId!;
 
             const influencerService = new InfluencerService();
-            const result = await influencerService.deleteInfluencer(id, organizationId);
+            await influencerService.deleteInfluencer(id, organizationId);
 
-            res.status(result.statusCode || 500).json(
-                result.success ? result.data : { error: result.error }
-            );
+            res.status(200).json({ message: 'Influencer deleted successfully' });
         } catch (error) {
             console.error('Delete influencer error:', error);
             res.status(500).json({ error: 'Failed to delete influencer' });
         }
     };
 
-    private syncInfluencerPosts = async (req: Request, res: Response): Promise<void> => {
+    private syncPosts = async (req: Request, res: Response): Promise<void> => {
         try {
             const { id } = req.params;
             const organizationId = (req as any).organizationId!;
 
             const influencerService = new InfluencerService();
-            const result = await influencerService.syncInfluencerPosts(id, organizationId);
+            await influencerService.syncPosts(id, organizationId);
 
-            res.status(result.statusCode || 500).json(
-                result.success ? result.data : { error: result.error }
-            );
+            res.status(200).json({ message: 'Posts synced successfully' });
         } catch (error) {
             console.error('Sync influencer posts error:', error);
             res.status(500).json({ error: 'Failed to sync posts' });
         }
     };
 
-    private syncInfluencerData = async (req: Request, res: Response): Promise<void> => {
+    private syncProfile = async (req: Request, res: Response): Promise<void> => {
         try {
             const { id } = req.params;
             const organizationId = (req as any).organizationId!;
 
             const influencerService = new InfluencerService();
-            const result = await influencerService.syncInfluencerData(id, organizationId);
+            await influencerService.syncProfile(id, organizationId);
 
-            res.status(result.statusCode || 500).json(
-                result.success ? result.data : { error: result.error }
-            );
+            res.status(200).json({ message: 'Profile synced successfully' });
         } catch (error) {
             console.error('Sync influencer data error:', error);
             res.status(500).json({ error: 'Failed to sync data' });
@@ -111,9 +107,7 @@ export class InfluencerController {
             const influencerService = new InfluencerService();
             const result = await influencerService.isInfluencerSyncing(id, organizationId);
 
-            res.status(result.statusCode || 500).json(
-                result.success ? result.data : { error: result.error }
-            );
+            res.status(200).json(result);
         } catch (error) {
             console.error('Get sync status error:', error);
             res.status(500).json({ error: 'Failed to get sync status' });

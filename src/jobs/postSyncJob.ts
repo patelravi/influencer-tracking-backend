@@ -31,19 +31,9 @@ export class PostSyncJob {
                     const postSyncService = new PostSyncService();
 
                     switch (job.name) {
-                        case 'sync-all-influencers':
-                            await postSyncService.syncAllInfluencers();
-                            break;
-
                         case 'sync-all-data':
                             await postSyncService.syncAllInfluencerData();
                             break;
-
-                        case 'sync-influencer': {
-                            const { influencerId } = job.data;
-                            await postSyncService.syncInfluencerPosts(influencerId);
-                            break;
-                        }
 
                         case 'sync-influencer-data': {
                             const { influencerId } = job.data;

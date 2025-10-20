@@ -1,8 +1,6 @@
 import { InfluencerModel } from '../models/InfluencerModel';
-import { ProfileScraperService } from './profileScraperService';
-import { XService } from './xService';
+import { ScraperFactory } from './scrapers/scraperFactory';
 import { Logger } from '../utils/logger';
-import { PlatformType } from '../utils/const';
 
 export interface ProfileUpdateData {
     name?: string;
@@ -19,19 +17,19 @@ export class ProfileSyncService {
     /**
      * Sync profile data for a single influencer
      */
-    async syncInfluencerProfile(influencerId: string): Promise<boolean> {
+    async initProfileSync(influencerId: string): Promise<void> {
         try {
             const influencer = await InfluencerModel.findById(influencerId);
 
             if (!influencer) {
                 Logger.warn(`Influencer not found for profile sync: ${influencerId}`);
-                return false;
+                throw new Error(`Influencer not found for profile sync: ${influencerId}`);
             }
 
             // Check if profile is already being synced
             if (influencer.isProfileSyncing) {
                 Logger.warn(`Profile already being synced for influencer: ${influencerId}`);
-                return false;
+                throw new Error(`Profile already being synced for influencer: ${influencerId}`);
             }
 
             // Set profile syncing flag
@@ -47,30 +45,33 @@ export class ProfileSyncService {
 
             Logger.info(`Starting profile sync for ${influencer.name} (${influencer.platform})`);
 
-            let updatedData: ProfileUpdateData | null = null;
+            // Get the appropriate scraper for the platform
+            const scraper = ScraperFactory.getScraper(influencer.platform);
 
-            switch (influencer.platform) {
-                case PlatformType.X:
-                    updatedData = await this.syncXProfile(influencer);
-                    break;
-                case PlatformType.LinkedIn:
-                    updatedData = await this.syncLinkedInProfile(influencer);
-                    break;
-                default:
-                    Logger.warn(`Unsupported platform for profile sync: ${influencer.platform}`);
-                    return false;
-            }
+            // Scrape profile data using the platform-specific scraper
+            await scraper.initScrapProfile(influencer.handle);
 
-            if (updatedData) {
-                await this.updateInfluencerProfile(influencerId, updatedData);
-                Logger.info(`Profile sync completed for ${influencer.name}`);
-                return true;
-            }
+            // if (profileData) {
+            //     // Convert ProfileData to ProfileUpdateData
+            //     const updatedData: ProfileUpdateData = {
+            //         name: profileData.name,
+            //         avatarUrl: profileData.avatarUrl,
+            //         platformUserId: profileData.platformUserId,
+            //         bio: profileData.bio,
+            //         followerCount: profileData.followerCount,
+            //         verified: profileData.verified,
+            //         location: profileData.location
+            //     };
 
-            return false;
+            //     await this.updateInfluencerProfile(influencerId, updatedData);
+            //     Logger.info(`Profile sync completed for ${influencer.name}`);
+            //     return true;
+            // }
+
+
         } catch (error) {
             Logger.error(`Error syncing profile for influencer ${influencerId}:`, error);
-            return false;
+            throw error;
         } finally {
             // Always clear the syncing flag
             await InfluencerModel.updateOne(
@@ -80,108 +81,37 @@ export class ProfileSyncService {
         }
     }
 
-    /**
-     * Sync X/Twitter profile data
-     */
-    private async syncXProfile(influencer: any): Promise<ProfileUpdateData | null> {
-        try {
-            const xService = new XService();
-
-            // Get or fetch platform user ID
-            let platformUserId = influencer.platformUserId;
-
-            if (!platformUserId) {
-                const user = await xService.getUserByUsername(influencer.handle);
-                if (user) {
-                    platformUserId = user.id;
-                }
-            }
-
-            if (!platformUserId) {
-                Logger.warn(`Could not find X user for profile sync: ${influencer.handle}`);
-                return null;
-            }
-
-            // Fetch current user data
-            const userData = await xService.getUserById(platformUserId);
-
-            if (!userData) {
-                Logger.warn(`Could not fetch X user data for: ${influencer.handle}`);
-                return null;
-            }
-
-            return {
-                name: userData.name,
-                avatarUrl: userData.profile_image_url,
-                platformUserId: userData.id,
-                bio: userData.description,
-                followerCount: userData.public_metrics?.followers_count,
-                verified: userData.verified
-            };
-        } catch (error) {
-            Logger.error(`Error syncing X profile for ${influencer.handle}:`, error);
-            return null;
-        }
-    }
-
-    /**
-     * Sync LinkedIn profile data using ProfileScraperService
-     */
-    private async syncLinkedInProfile(influencer: any): Promise<ProfileUpdateData | null> {
-        try {
-            const profileScraper = new ProfileScraperService();
-            const profileData = await profileScraper.fetchProfileData('LinkedIn', influencer.handle);
-
-            if (!profileData) {
-                Logger.warn(`Could not fetch LinkedIn profile data for: ${influencer.handle}`);
-                return null;
-            }
-
-            return {
-                name: profileData.name,
-                avatarUrl: profileData.avatarUrl,
-                platformUserId: profileData.platformUserId,
-                bio: profileData.bio,
-                followerCount: profileData.followerCount,
-                verified: profileData.verified,
-                location: profileData.location
-            };
-        } catch (error) {
-            Logger.error(`Error syncing LinkedIn profile for ${influencer.handle}:`, error);
-            return null;
-        }
-    }
 
     /**
      * Update influencer profile data in database
      */
-    private async updateInfluencerProfile(influencerId: string, updateData: ProfileUpdateData): Promise<void> {
-        try {
-            const updateFields: any = {};
+    // private async updateInfluencerProfile(influencerId: string, updateData: ProfileUpdateData): Promise<void> {
+    //     try {
+    //         const updateFields: any = {};
 
-            // Only update fields that have values
-            if (updateData.name) updateFields.name = updateData.name;
-            if (updateData.avatarUrl) updateFields.avatarUrl = updateData.avatarUrl;
-            if (updateData.platformUserId) updateFields.platformUserId = updateData.platformUserId;
-            if (updateData.bio) updateFields.bio = updateData.bio;
-            if (updateData.followerCount !== undefined) updateFields.followerCount = updateData.followerCount;
-            if (updateData.verified !== undefined) updateFields.verified = updateData.verified;
-            if (updateData.location) updateFields.location = updateData.location;
+    //         // Only update fields that have values
+    //         if (updateData.name) updateFields.name = updateData.name;
+    //         if (updateData.avatarUrl) updateFields.avatarUrl = updateData.avatarUrl;
+    //         if (updateData.platformUserId) updateFields.platformUserId = updateData.platformUserId;
+    //         if (updateData.bio) updateFields.bio = updateData.bio;
+    //         if (updateData.followerCount !== undefined) updateFields.followerCount = updateData.followerCount;
+    //         if (updateData.verified !== undefined) updateFields.verified = updateData.verified;
+    //         if (updateData.location) updateFields.location = updateData.location;
 
-            // Add last profile sync timestamp
-            updateFields.lastProfileSync = new Date();
+    //         // Add last profile sync timestamp
+    //         updateFields.lastProfileSync = new Date();
 
-            await InfluencerModel.updateOne(
-                { _id: influencerId },
-                { $set: updateFields }
-            );
+    //         await InfluencerModel.updateOne(
+    //             { _id: influencerId },
+    //             { $set: updateFields }
+    //         );
 
-            Logger.info(`Updated profile data for influencer ${influencerId}`);
-        } catch (error) {
-            Logger.error(`Error updating influencer profile ${influencerId}:`, error);
-            throw error;
-        }
-    }
+    //         Logger.info(`Updated profile data for influencer ${influencerId}`);
+    //     } catch (error) {
+    //         Logger.error(`Error updating influencer profile ${influencerId}:`, error);
+    //         throw error;
+    //     }
+    // }
 
     /**
      * Sync profiles for all influencers
@@ -193,13 +123,11 @@ export class ProfileSyncService {
 
             let totalSynced = 0;
             for (const influencer of influencers) {
-                const synced = await this.syncInfluencerProfile(String(influencer._id));
-                if (synced) {
-                    totalSynced++;
-                }
+                await this.initProfileSync(String(influencer._id));
+                totalSynced++;
 
                 // Add delay to avoid rate limiting
-                await this.delay(1000);
+                await this.delay(200);
             }
 
             Logger.info(`Profile sync completed. Total profiles updated: ${totalSynced}`);

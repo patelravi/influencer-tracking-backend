@@ -4,7 +4,7 @@ import { InfluencerModel } from '../models/InfluencerModel';
 
 // Plan limits for influencers
 const PLAN_LIMITS = {
-    free: 1,
+    free: 5,
     starter: 10,
     pro: 50,
 };

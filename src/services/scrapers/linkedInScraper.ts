@@ -1,0 +1,501 @@
+import axios from 'axios';
+import { IScraper } from '../../types/scraper';
+import { EnvConfig } from '../../utils/config';
+import { Logger } from '../../utils/logger';
+import moment from 'moment';
+
+// LinkedIn-specific interfaces for API responses
+// interface LinkedInApiResponse {
+//     status: string;
+//     data?: unknown[];
+// }
+
+// interface LinkedInProfile {
+//     name?: string;
+//     full_name?: string;
+//     title?: string;
+//     url?: string;
+//     profile_url?: string;
+//     input_url?: string;
+//     avatar?: string;
+//     profile_picture?: string;
+//     image_url?: string;
+//     photo_url?: string;
+//     profile_id?: string;
+//     user_id?: string;
+//     linkedin_id?: string;
+//     headline?: string;
+//     summary?: string;
+//     about?: string;
+//     followers?: string | number;
+//     follower_count?: string | number;
+//     connections?: string | number;
+//     verified?: boolean;
+//     city?: string;
+//     location?: string;
+// }
+
+// interface LinkedInPost {
+//     post_id?: string;
+//     id?: string;
+//     post_text_html?: string;
+//     url?: string;
+//     post_url?: string;
+//     link?: string;
+//     likes?: string | number;
+//     reactions?: string | number;
+//     like_count?: string | number;
+//     comments?: string | number;
+//     num_comments?: string | number;
+//     comment_count?: string | number;
+//     shares?: string | number;
+//     reposts?: string | number;
+//     share_count?: string | number;
+//     posted_at?: string;
+//     created_at?: string;
+//     timestamp?: string;
+//     images?: string[] | MediaItem[];
+//     media?: string[] | MediaItem[];
+//     media_urls?: string[] | MediaItem[];
+//     attachments?: string[] | MediaItem[];
+//     image_url?: string;
+//     user_id?: string;
+//     author_id?: string;
+//     author?: {
+//         id?: string;
+//     };
+// }
+
+// interface MediaItem {
+//     url?: string;
+//     image_url?: string;
+// }
+
+/**
+ * LinkedIn Scraper implementation using Bright Data Web Scraper API
+ * 
+ * This scraper uses Bright Data's Web Scraper API to fetch structured data
+ * from LinkedIn profiles and posts without API limitations.
+ * 
+ * Bright Data handles:
+ * - CAPTCHA solving
+ * - Browser fingerprinting
+ * - IP rotation
+ * - Anti-bot detection
+ */
+export class LinkedInScraper implements IScraper {
+    private readonly apiToken: string;
+    private readonly webScraperUrl = 'https://api.brightdata.com/datasets/v3';
+    private readonly requestTimeout = 10000;
+    private readonly webhookUrl: string = 'https://influencer-tracking-backend-240655696079.asia-south1.run.app/scrap-webhook';
+    // private readonly webhookUrl: string = 'https://eo85bamru7wval9.m.pipedream.net';
+
+    // BrightData dataset IDs for LinkedIn
+    private readonly datasets = {
+        profile: 'gd_l1viktl72bvl7bjuj0', // LinkedIn profiles dataset
+        posts: 'gd_lyy3tktm25m4avu764',   // LinkedIn posts dataset
+    };
+
+    constructor() {
+        this.apiToken = EnvConfig.get('BRIGHT_DATA_API_TOKEN');
+        if (!this.apiToken) {
+            Logger.warn('Bright Data API token not configured');
+        }
+    }
+
+    /**
+     * Scrape LinkedIn profile information
+     * @param handle - LinkedIn handle or profile URL
+     * @returns Profile data or null if scraping failed
+     */
+    async initScrapProfile(handle: string): Promise<void> {
+        if (!this.apiToken) {
+            Logger.error('Cannot scrape LinkedIn profile: API token not configured');
+            throw new Error('Cannot scrape LinkedIn profile: API token not configured');
+        }
+
+        try {
+            Logger.info(`Scraping LinkedIn profile for handle: ${handle}`);
+
+            const profileUrl = this.buildProfileUrl(handle);
+
+            // Trigger scraping job
+            const snapshotId = await this.triggerProfileScrapingJob(profileUrl);
+
+            Logger.info(`Successfully scraped LinkedIn profile for: ${handle}, snapshot id:`, snapshotId);
+
+        } catch (error: unknown) {
+            const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+            Logger.error(`Error scraping LinkedIn profile for ${handle}:`, errorMessage);
+            throw error;
+        }
+    }
+
+    /**
+     * Scrape LinkedIn posts from a profile
+     * @param handle - LinkedIn handle or profile URL
+     * @param limit - Maximum number of posts to scrape (default: 20)
+     * @returns Array of post data
+     */
+    async initScrapPosts(handle: string): Promise<void> {
+        if (!this.apiToken) {
+            Logger.error('Cannot scrape LinkedIn posts: API token not configured');
+            throw new Error('Cannot scrape LinkedIn posts: API token not configured');
+        }
+
+        try {
+            Logger.info(`Scraping LinkedIn posts from: ${handle}`);
+
+            const profileUrl = this.buildProfileUrl(handle);
+
+            // Trigger scraping job
+            const snapshotId = await this.triggerPostScrapingJob(profileUrl);
+
+            // Poll for results
+            // const response = await this.pollScrapingJob(snapshotId);
+            // const posts = response.data as LinkedInPost[] || [];
+
+            // Extract target user_id from the posts
+            // const targetUserId = this.extractTargetUserId(posts);
+
+            // // Filter posts to only include those authored by the target user
+            // const ownPosts = this.filterOwnPosts(posts, targetUserId);
+
+            // // Format posts to match PostData interface
+            // const formattedPosts = ownPosts.map(post => this.formatPost(post));
+
+            Logger.info(`Initialized post scrapping request for ${handle}, snapshot id:`, snapshotId);
+
+        } catch (error: unknown) {
+            const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+            Logger.error(`Error scraping LinkedIn posts from ${handle}:`, errorMessage);
+            throw error;
+        }
+    }
+
+    /**
+     * Build LinkedIn profile URL from handle
+     * @param handle - LinkedIn handle or profile URL
+     * @returns Full LinkedIn profile URL
+     */
+    private buildProfileUrl(handle: string): string {
+        // Remove @ symbol if present
+        const cleanHandle = handle.startsWith('@') ? handle.substring(1) : handle;
+
+        // If it's already a full URL, return as is
+        if (cleanHandle.includes('linkedin.com')) {
+            return cleanHandle;
+        }
+
+        // Build profile URL
+        return `https://linkedin.com/in/${cleanHandle}`;
+    }
+
+    private async triggerProfileScrapingJob(profileUrl: string): Promise<string> {
+
+        const queryParams = new URLSearchParams({
+            dataset_id: this.datasets.profile,
+            format: 'json',
+            include_errors: 'true',
+
+            // Webhook for results.
+            uncompressed_webhook: 'true',
+            endpoint: this.webhookUrl,
+            webhook_endpoint: this.webhookUrl,
+            notify: 'true',
+        }).toString();
+
+        const options = {
+            method: 'POST',
+            url: `${this.webScraperUrl}/trigger?${queryParams}`,
+            headers: {
+                'Authorization': `Bearer ${this.apiToken}`,
+                'Content-Type': 'application/json'
+            },
+            data: JSON.stringify([{ url: profileUrl }]),
+            timeout: this.requestTimeout,
+        };
+
+        Logger.info("Start: Hit Profile Scrap Api:", JSON.stringify(options));
+        const response = await axios(options);
+        Logger.info("End: Hit Profile Scrap Api:", JSON.stringify(response.data));
+
+        return response.data.snapshot_id;
+    }
+
+    private async triggerPostScrapingJob(profileUrl: string): Promise<string> {
+
+        const queryParams = new URLSearchParams({
+            dataset_id: this.datasets.posts,
+            format: 'json',
+            type: 'discover_new',
+            'discover_by': 'profile_url',
+
+            include_errors: 'true',
+
+            // Webhook for results.
+            uncompressed_webhook: 'true',
+            endpoint: this.webhookUrl,
+            webhook_endpoint: this.webhookUrl,
+            notify: 'true',
+        }).toString();
+
+        const options = {
+            method: 'POST',
+            url: `${this.webScraperUrl}/trigger?${queryParams}`,
+            headers: {
+                'Authorization': `Bearer ${this.apiToken}`,
+                'Content-Type': 'application/json'
+            },
+            data: JSON.stringify([{
+                url: profileUrl,
+                start_date: moment().subtract(1, 'year').format('YYYY-MM-DD') + 'T00:00:00.000Z',
+                end_date: moment().format('YYYY-MM-DD') + 'T23:59:59.999Z'
+            }]),
+            timeout: this.requestTimeout,
+        };
+
+        Logger.info("Start: Hit Post Scrap Api:", JSON.stringify(options));
+        const response = await axios(options);
+        const snapshotId = response.data.snapshot_id;
+        Logger.info("End: Hit Post Scrap Api:", JSON.stringify(response.data));
+
+        return snapshotId;
+    }
+
+    /**
+     * Poll for scraping job completion
+     * @param snapshotId - Snapshot ID to poll
+     * @returns Scraped data when ready
+     */
+    // private async pollScrapingJob(snapshotId: string): Promise<LinkedInApiResponse> {
+    //     for (let attempt = 0; attempt < this.maxPollingAttempts; attempt++) {
+    //         await this.delay(this.pollingDelay);
+
+    //         try {
+    //             const response: AxiosResponse = await axios.get(
+    //                 `${this.webScraperUrl}/snapshot/${snapshotId}?format=json`,
+    //                 {
+    //                     headers: {
+    //                         'Authorization': `Bearer ${this.apiToken}`
+    //                     },
+    //                     timeout: this.requestTimeout,
+    //                 }
+    //             );
+
+    //             const status = response.data.status;
+    //             Logger.info(`LinkedIn scraping job status(attempt #${attempt + 1}): ${status}`);
+    //             if (status === 'running') {
+    //                 continue;
+    //             }
+
+    //             return response.data as LinkedInApiResponse || { status: 'completed', data: [] };
+
+    //         } catch (error: unknown) {
+    //             const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    //             if (errorMessage === 'Scraping job failed') {
+    //                 throw error;
+    //             }
+    //             Logger.error(`Error polling LinkedIn job ${snapshotId}:`, errorMessage);
+    //         }
+    //     }
+
+    //     throw new Error(`LinkedIn scraping job ${snapshotId} timeout after ${this.maxPollingAttempts} attempts`);
+    // }
+
+    /**
+     * Format profile data from Bright Data response
+     * @param data - Raw profile data from Bright Data
+     * @param profileUrl - Original profile URL
+     * @returns Formatted profile data
+     */
+    // private formatProfileData(data: LinkedInApiResponse, profileUrl: string): ProfileData {
+    //     // The response is usually an array, get the first result
+    //     const profile = Array.isArray(data.data) ? data.data[0] as LinkedInProfile : data as unknown as LinkedInProfile;
+
+    //     if (!profile) {
+    //         throw new Error('No LinkedIn profile data returned');
+    //     }
+
+    //     return {
+    //         name: profile.name || profile.full_name || profile.title || '',
+    //         profileUrl: profile.url || profile.profile_url || profile.input_url || profileUrl,
+    //         avatarUrl: profile.avatar || profile.profile_picture || profile.image_url || profile.photo_url,
+    //         platformUserId: profile.profile_id || profile.user_id || profile.linkedin_id,
+    //         bio: profile.headline || profile.summary || profile.about,
+    //         followerCount: this.parseNumber(profile.followers || profile.follower_count || profile.connections),
+    //         verified: profile.verified || false,
+    //         location: profile.city || profile.location || ''
+    //     };
+    // }
+
+    /**
+     * Format post data from Bright Data response
+     * @param post - Raw post data from Bright Data
+     * @returns Formatted post data
+     */
+    // private formatPost(post: LinkedInPost): PostData {
+    //     return {
+    //         platformPostId: post.post_id || post.id || this.generateFallbackId(post),
+    //         content: post.post_text_html || '',
+    //         postUrl: post.url || post.post_url || post.link || '',
+    //         likes: this.parseNumber(post.likes || post.reactions || post.like_count),
+    //         comments: this.parseNumber(post.comments || post.num_comments || post.comment_count),
+    //         shares: this.parseNumber(post.shares || post.reposts || post.share_count),
+    //         postedAt: this.parseDate(post.posted_at || post.created_at || post.timestamp),
+    //         mediaUrls: this.parseMediaUrls(post),
+    //     };
+    // }
+
+    /**
+     * Parse media URLs from various possible response formats
+     * @param post - Raw post data
+     * @returns Array of media URLs
+     */
+    // private parseMediaUrls(post: LinkedInPost): string[] {
+    //     const urls: string[] = [];
+
+    //     // Try different field names for media
+    //     const media = post.images || post.media || post.media_urls || post.attachments || [];
+
+    //     if (Array.isArray(media)) {
+    //         media.forEach((item: string | MediaItem) => {
+    //             if (typeof item === 'string') {
+    //                 urls.push(item);
+    //             } else if (item.url) {
+    //                 urls.push(item.url);
+    //             } else if (item.image_url) {
+    //                 urls.push(item.image_url);
+    //             }
+    //         });
+    //     }
+
+    //     // Single image URL
+    //     if (post.image_url && typeof post.image_url === 'string') {
+    //         urls.push(post.image_url);
+    //     }
+
+    //     return urls;
+    // }
+
+    /**
+     * Parse number from various formats (string, number, "1.2K", etc.)
+     * @param value - Value to parse
+     * @returns Parsed number or 0 if invalid
+     */
+    // private parseNumber(value: string | number | undefined): number {
+    //     if (typeof value === 'number') {
+    //         return value;
+    //     }
+
+    //     if (typeof value === 'string') {
+    //         // Handle "1.2K", "5.3M" format
+    //         const match = value.match(/^([\d.]+)([KkMmBb])?$/);
+    //         if (match) {
+    //             const num = parseFloat(match[1]);
+    //             const suffix = match[2]?.toLowerCase();
+
+    //             if (suffix === 'k') return Math.round(num * 1000);
+    //             if (suffix === 'm') return Math.round(num * 1000000);
+    //             if (suffix === 'b') return Math.round(num * 1000000000);
+    //             return Math.round(num);
+    //         }
+    //     }
+
+    //     return 0;
+    // }
+
+    /**
+     * Parse date from various formats
+     * @param value - Date value to parse
+     * @returns Parsed date or current date if invalid
+     */
+    // private parseDate(value: string | Date | undefined): Date {
+    //     if (!value) {
+    //         return new Date();
+    //     }
+
+    //     if (value instanceof Date) {
+    //         return value;
+    //     }
+
+    //     // Try parsing as ISO string or timestamp
+    //     const date = new Date(value);
+    //     return isNaN(date.getTime()) ? new Date() : date;
+    // }
+
+    /**
+     * Generate fallback ID if post doesn't have one
+     * @param post - Post data
+     * @returns Generated fallback ID
+     */
+    // private generateFallbackId(post: LinkedInPost): string {
+    //     const urlHash = Buffer.from(post.url || post.post_url || String(Date.now()))
+    //         .toString('base64')
+    //         .substring(0, 32);
+    //     return `linkedin_${urlHash}`;
+    // }
+
+    /**
+     * Extract the target user_id from the posts
+     * This identifies which user's profile we're scraping
+     * @param posts - Array of scraped posts
+     * @returns Target user ID or null if not found
+     */
+    // private extractTargetUserId(posts: LinkedInPost[]): string | null {
+    //     // Try to extract from the most common post author
+    //     const userIds = posts
+    //         .map(post => post.user_id || post.author_id || post.author?.id)
+    //         .filter((id): id is string => Boolean(id));
+
+    //     if (userIds.length === 0) {
+    //         Logger.warn('No user IDs found in scraped LinkedIn posts');
+    //         return null;
+    //     }
+
+    //     // Count frequency of each user_id
+    //     const userIdCounts = userIds.reduce((acc: Record<string, number>, id: string) => {
+    //         acc[id] = (acc[id] || 0) + 1;
+    //         return acc;
+    //     }, {});
+
+    //     // Return the most frequent user_id (the profile owner)
+    //     const targetUserId = Object.keys(userIdCounts).reduce((a, b) =>
+    //         userIdCounts[a] > userIdCounts[b] ? a : b
+    //     );
+
+    //     Logger.info(`Target LinkedIn user ID identified: ${targetUserId}`);
+    //     return targetUserId;
+    // }
+
+    /**
+     * Filter posts to only include those authored by the target user
+     * Excludes posts the user has liked or commented on
+     * @param posts - Array of scraped posts
+     * @param targetUserId - Target user ID to filter by
+     * @returns Filtered array of posts
+     */
+    // private filterOwnPosts(posts: LinkedInPost[], targetUserId: string | null): LinkedInPost[] {
+    //     if (!targetUserId) {
+    //         Logger.warn('No target user ID provided, returning all LinkedIn posts');
+    //         return posts;
+    //     }
+
+    //     const filtered = posts.filter(post => {
+    //         const postAuthorId = post.user_id || post.author_id || post.author?.id;
+    //         return postAuthorId === targetUserId;
+    //     });
+
+    //     Logger.info(`Filtered ${filtered.length} own posts from ${posts.length} total LinkedIn posts`);
+    //     return filtered;
+    // }
+
+    /**
+     * Utility delay function for polling
+     * @param ms - Milliseconds to delay
+     * @returns Promise that resolves after delay
+     */
+    // private delay(ms: number): Promise<void> {
+    //     return new Promise(resolve => setTimeout(resolve, ms));
+    // }
+}

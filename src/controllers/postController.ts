@@ -88,44 +88,30 @@ export class PostController {
             const organizationId = (req as any).organizationId;
             const postSyncService = new PostSyncService();
 
-            if (influencerId) {
-                // Verify influencer belongs to user's organization
-                const influencer = await InfluencerModel.findOne({
-                    _id: influencerId,
-                    organizationId,
-                });
-
-                if (!influencer) {
-                    res.status(404).json({ error: 'Influencer not found' });
-                    return;
-                }
-
-                // Sync single influencer
-                const count = await postSyncService.syncInfluencerPosts(influencerId);
-                Logger.info(`Synced ${count} posts for influencer ${influencerId}`);
-
-                res.json({
-                    message: 'Sync completed',
-                    postsSynced: count,
-                });
-            } else {
-                // Sync all influencers in the organization
-                const influencers = await InfluencerModel.find({ organizationId });
-                let totalSynced = 0;
-
-                for (const influencer of influencers) {
-                    const count = await postSyncService.syncInfluencerPosts(String(influencer._id));
-                    totalSynced += count;
-                }
-
-                Logger.info(`Synced ${totalSynced} posts for organization ${organizationId}`);
-
-                res.json({
-                    message: 'Sync completed',
-                    postsSynced: totalSynced,
-                    influencerCount: influencers.length,
-                });
+            if (!influencerId) {
+                res.status(500).json({ error: 'Failed to sync posts' });
+                return;
             }
+
+            // Verify influencer belongs to user's organization
+            const influencer = await InfluencerModel.findOne({
+                _id: influencerId,
+                organizationId,
+            });
+
+            if (!influencer) {
+                res.status(404).json({ error: 'Influencer not found' });
+                return;
+            }
+
+            // Sync single influencer
+            await postSyncService.initPostSync(influencerId);
+            Logger.info(`Synced posts for influencer ${influencerId}`);
+
+            res.json({
+                message: 'Sync completed'
+            });
+
         } catch (error) {
             Logger.error('Sync posts error:', error);
             res.status(500).json({ error: 'Failed to sync posts' });
