@@ -1,75 +1,11 @@
 import axios from 'axios';
-import { IScraper } from '../../types/scraper';
+import moment from 'moment';
+import { IScraper, PostData, ProfileData, ScrapJobContext } from '../../types/scraper';
 import { EnvConfig } from '../../utils/config';
 import { Logger } from '../../utils/logger';
-import moment from 'moment';
+import { ScrapperServiceBase } from './scrapperServiceBase';
+import { PlatformType } from '../../utils/const';
 
-// LinkedIn-specific interfaces for API responses
-// interface LinkedInApiResponse {
-//     status: string;
-//     data?: unknown[];
-// }
-
-// interface LinkedInProfile {
-//     name?: string;
-//     full_name?: string;
-//     title?: string;
-//     url?: string;
-//     profile_url?: string;
-//     input_url?: string;
-//     avatar?: string;
-//     profile_picture?: string;
-//     image_url?: string;
-//     photo_url?: string;
-//     profile_id?: string;
-//     user_id?: string;
-//     linkedin_id?: string;
-//     headline?: string;
-//     summary?: string;
-//     about?: string;
-//     followers?: string | number;
-//     follower_count?: string | number;
-//     connections?: string | number;
-//     verified?: boolean;
-//     city?: string;
-//     location?: string;
-// }
-
-// interface LinkedInPost {
-//     post_id?: string;
-//     id?: string;
-//     post_text_html?: string;
-//     url?: string;
-//     post_url?: string;
-//     link?: string;
-//     likes?: string | number;
-//     reactions?: string | number;
-//     like_count?: string | number;
-//     comments?: string | number;
-//     num_comments?: string | number;
-//     comment_count?: string | number;
-//     shares?: string | number;
-//     reposts?: string | number;
-//     share_count?: string | number;
-//     posted_at?: string;
-//     created_at?: string;
-//     timestamp?: string;
-//     images?: string[] | MediaItem[];
-//     media?: string[] | MediaItem[];
-//     media_urls?: string[] | MediaItem[];
-//     attachments?: string[] | MediaItem[];
-//     image_url?: string;
-//     user_id?: string;
-//     author_id?: string;
-//     author?: {
-//         id?: string;
-//     };
-// }
-
-// interface MediaItem {
-//     url?: string;
-//     image_url?: string;
-// }
 
 /**
  * LinkedIn Scraper implementation using Bright Data Web Scraper API
@@ -83,7 +19,7 @@ import moment from 'moment';
  * - IP rotation
  * - Anti-bot detection
  */
-export class LinkedInScraper implements IScraper {
+export class LinkedInScraper extends ScrapperServiceBase implements IScraper {
     private readonly apiToken: string;
     private readonly webScraperUrl = 'https://api.brightdata.com/datasets/v3';
     private readonly requestTimeout = 10000;
@@ -97,6 +33,7 @@ export class LinkedInScraper implements IScraper {
     };
 
     constructor() {
+        super();
         this.apiToken = EnvConfig.get('BRIGHT_DATA_API_TOKEN');
         if (!this.apiToken) {
             Logger.warn('Bright Data API token not configured');
@@ -106,9 +43,10 @@ export class LinkedInScraper implements IScraper {
     /**
      * Scrape LinkedIn profile information
      * @param handle - LinkedIn handle or profile URL
+     * @param jobContext - Optional context for creating scrap job entries
      * @returns Profile data or null if scraping failed
      */
-    async initScrapProfile(handle: string): Promise<void> {
+    async initScrapProfile(handle: string, jobContext: ScrapJobContext): Promise<void> {
         if (!this.apiToken) {
             Logger.error('Cannot scrape LinkedIn profile: API token not configured');
             throw new Error('Cannot scrape LinkedIn profile: API token not configured');
@@ -117,10 +55,20 @@ export class LinkedInScraper implements IScraper {
         try {
             Logger.info(`Scraping LinkedIn profile for handle: ${handle}`);
 
-            const profileUrl = this.buildProfileUrl(handle);
+            const profileUrl = this._buildProfileUrl(handle);
+
+            // Create Job.
+            const jobId = await this.createScrapJob({
+                handle,
+                targetUrl: profileUrl,
+                jobType: 'profile',
+                jobContext,
+                platform: PlatformType.LinkedIn,
+                status: 'processing'
+            });
 
             // Trigger scraping job
-            const snapshotId = await this.triggerProfileScrapingJob(profileUrl);
+            const snapshotId = await this.callProfileScrapingApi(profileUrl, jobId);
 
             Logger.info(`Successfully scraped LinkedIn profile for: ${handle}, snapshot id:`, snapshotId);
 
@@ -135,9 +83,10 @@ export class LinkedInScraper implements IScraper {
      * Scrape LinkedIn posts from a profile
      * @param handle - LinkedIn handle or profile URL
      * @param limit - Maximum number of posts to scrape (default: 20)
+     * @param jobContext - Optional context for creating scrap job entries
      * @returns Array of post data
      */
-    async initScrapPosts(handle: string): Promise<void> {
+    async initScrapPosts(handle: string, jobContext: ScrapJobContext): Promise<void> {
         if (!this.apiToken) {
             Logger.error('Cannot scrape LinkedIn posts: API token not configured');
             throw new Error('Cannot scrape LinkedIn posts: API token not configured');
@@ -146,10 +95,20 @@ export class LinkedInScraper implements IScraper {
         try {
             Logger.info(`Scraping LinkedIn posts from: ${handle}`);
 
-            const profileUrl = this.buildProfileUrl(handle);
+            const profileUrl = this._buildProfileUrl(handle);
+
+            // Create Job.
+            const jobId = await this.createScrapJob({
+                handle,
+                targetUrl: profileUrl,
+                jobType: 'posts',
+                jobContext,
+                platform: PlatformType.LinkedIn,
+                status: 'processing'
+            });
 
             // Trigger scraping job
-            const snapshotId = await this.triggerPostScrapingJob(profileUrl);
+            const snapshotId = await this.callPostScrapingApi(profileUrl, jobId);
 
             // Poll for results
             // const response = await this.pollScrapingJob(snapshotId);
@@ -178,7 +137,7 @@ export class LinkedInScraper implements IScraper {
      * @param handle - LinkedIn handle or profile URL
      * @returns Full LinkedIn profile URL
      */
-    private buildProfileUrl(handle: string): string {
+    private _buildProfileUrl(handle: string): string {
         // Remove @ symbol if present
         const cleanHandle = handle.startsWith('@') ? handle.substring(1) : handle;
 
@@ -191,7 +150,7 @@ export class LinkedInScraper implements IScraper {
         return `https://linkedin.com/in/${cleanHandle}`;
     }
 
-    private async triggerProfileScrapingJob(profileUrl: string): Promise<string> {
+    private async callProfileScrapingApi(profileUrl: string, jobId: string): Promise<string> {
 
         const queryParams = new URLSearchParams({
             dataset_id: this.datasets.profile,
@@ -200,8 +159,8 @@ export class LinkedInScraper implements IScraper {
 
             // Webhook for results.
             uncompressed_webhook: 'true',
-            endpoint: this.webhookUrl,
-            webhook_endpoint: this.webhookUrl,
+            endpoint: `${this.webhookUrl}/${jobId}`,
+            webhook_endpoint: `${this.webhookUrl}/${jobId}`,
             notify: 'true',
         }).toString();
 
@@ -223,7 +182,7 @@ export class LinkedInScraper implements IScraper {
         return response.data.snapshot_id;
     }
 
-    private async triggerPostScrapingJob(profileUrl: string): Promise<string> {
+    private async callPostScrapingApi(profileUrl: string, jobId: string): Promise<string> {
 
         const queryParams = new URLSearchParams({
             dataset_id: this.datasets.posts,
@@ -235,8 +194,8 @@ export class LinkedInScraper implements IScraper {
 
             // Webhook for results.
             uncompressed_webhook: 'true',
-            endpoint: this.webhookUrl,
-            webhook_endpoint: this.webhookUrl,
+            endpoint: `${this.webhookUrl}/${jobId}`,
+            webhook_endpoint: `${this.webhookUrl}/${jobId}`,
             notify: 'true',
         }).toString();
 
@@ -309,132 +268,126 @@ export class LinkedInScraper implements IScraper {
      * @param profileUrl - Original profile URL
      * @returns Formatted profile data
      */
-    // private formatProfileData(data: LinkedInApiResponse, profileUrl: string): ProfileData {
-    //     // The response is usually an array, get the first result
-    //     const profile = Array.isArray(data.data) ? data.data[0] as LinkedInProfile : data as unknown as LinkedInProfile;
+    public parseProfileData(payload: any): ProfileData {
 
-    //     if (!profile) {
-    //         throw new Error('No LinkedIn profile data returned');
-    //     }
-
-    //     return {
-    //         name: profile.name || profile.full_name || profile.title || '',
-    //         profileUrl: profile.url || profile.profile_url || profile.input_url || profileUrl,
-    //         avatarUrl: profile.avatar || profile.profile_picture || profile.image_url || profile.photo_url,
-    //         platformUserId: profile.profile_id || profile.user_id || profile.linkedin_id,
-    //         bio: profile.headline || profile.summary || profile.about,
-    //         followerCount: this.parseNumber(profile.followers || profile.follower_count || profile.connections),
-    //         verified: profile.verified || false,
-    //         location: profile.city || profile.location || ''
-    //     };
-    // }
+        return {
+            name: payload.name || payload.full_name || payload.title || '',
+            profileUrl: payload.url || payload.profile_url || payload.input_url || '',
+            avatarUrl: payload.avatar || payload.profile_picture || payload.image_url || payload.photo_url,
+            platformUserId: payload.profile_id || payload.user_id || payload.linkedin_id,
+            bio: payload.headline || payload.summary || payload.about,
+            followerCount: this._parseNumber(payload.followers || payload.follower_count || payload.connections),
+            verified: payload.verified || false,
+            location: payload.city || payload.location || ''
+        };
+    }
 
     /**
      * Format post data from Bright Data response
      * @param post - Raw post data from Bright Data
      * @returns Formatted post data
      */
-    // private formatPost(post: LinkedInPost): PostData {
-    //     return {
-    //         platformPostId: post.post_id || post.id || this.generateFallbackId(post),
-    //         content: post.post_text_html || '',
-    //         postUrl: post.url || post.post_url || post.link || '',
-    //         likes: this.parseNumber(post.likes || post.reactions || post.like_count),
-    //         comments: this.parseNumber(post.comments || post.num_comments || post.comment_count),
-    //         shares: this.parseNumber(post.shares || post.reposts || post.share_count),
-    //         postedAt: this.parseDate(post.posted_at || post.created_at || post.timestamp),
-    //         mediaUrls: this.parseMediaUrls(post),
-    //     };
-    // }
+    public parsePostData(post: any): PostData {
+        return {
+            platformPostId: post.post_id || post.id || this.generateFallbackId(post),
+            content: post.post_text_html || '',
+            postUrl: post.url || post.post_url || post.link || '',
+            likes: this._parseNumber(post.likes || post.reactions || post.like_count),
+            comments: this._parseNumber(post.comments || post.num_comments || post.comment_count),
+            shares: this._parseNumber(post.shares || post.reposts || post.share_count),
+            postedAt: this.parseDate(post.posted_at || post.created_at || post.timestamp),
+            mediaUrls: this._parseMediaUrls(post),
+        };
+    }
 
     /**
      * Parse media URLs from various possible response formats
      * @param post - Raw post data
      * @returns Array of media URLs
      */
-    // private parseMediaUrls(post: LinkedInPost): string[] {
-    //     const urls: string[] = [];
+    private _parseMediaUrls(post: any): string[] {
+        const urls: string[] = [];
 
-    //     // Try different field names for media
-    //     const media = post.images || post.media || post.media_urls || post.attachments || [];
+        // Try different field names for media
+        const media = post.images || post.media || post.media_urls || post.attachments || [];
 
-    //     if (Array.isArray(media)) {
-    //         media.forEach((item: string | MediaItem) => {
-    //             if (typeof item === 'string') {
-    //                 urls.push(item);
-    //             } else if (item.url) {
-    //                 urls.push(item.url);
-    //             } else if (item.image_url) {
-    //                 urls.push(item.image_url);
-    //             }
-    //         });
-    //     }
+        if (Array.isArray(media)) {
+            media.forEach((item: any) => {
+                if (typeof item === 'string') {
+                    urls.push(item);
+                } else if (item.url) {
+                    urls.push(item.url);
+                } else if (item.image_url) {
+                    urls.push(item.image_url);
+                }
+            });
+        }
 
-    //     // Single image URL
-    //     if (post.image_url && typeof post.image_url === 'string') {
-    //         urls.push(post.image_url);
-    //     }
+        // Single image URL
+        if (post.image_url && typeof post.image_url === 'string') {
+            urls.push(post.image_url);
+        }
 
-    //     return urls;
-    // }
+        return urls;
+    }
 
     /**
      * Parse number from various formats (string, number, "1.2K", etc.)
      * @param value - Value to parse
      * @returns Parsed number or 0 if invalid
      */
-    // private parseNumber(value: string | number | undefined): number {
-    //     if (typeof value === 'number') {
-    //         return value;
-    //     }
+    private _parseNumber(value: string | number | undefined): number {
+        if (typeof value === 'number') {
+            return value;
+        }
 
-    //     if (typeof value === 'string') {
-    //         // Handle "1.2K", "5.3M" format
-    //         const match = value.match(/^([\d.]+)([KkMmBb])?$/);
-    //         if (match) {
-    //             const num = parseFloat(match[1]);
-    //             const suffix = match[2]?.toLowerCase();
+        if (typeof value === 'string') {
+            // Handle "1.2K", "5.3M" format
+            const match = value.match(/^([\d.]+)([KkMmBb])?$/);
+            if (match) {
+                const num = parseFloat(match[1]);
+                const suffix = match[2]?.toLowerCase();
 
-    //             if (suffix === 'k') return Math.round(num * 1000);
-    //             if (suffix === 'm') return Math.round(num * 1000000);
-    //             if (suffix === 'b') return Math.round(num * 1000000000);
-    //             return Math.round(num);
-    //         }
-    //     }
+                if (suffix === 'k') return Math.round(num * 1000);
+                if (suffix === 'm') return Math.round(num * 1000000);
+                if (suffix === 'b') return Math.round(num * 1000000000);
+                return Math.round(num);
+            }
+        }
 
-    //     return 0;
-    // }
+        return 0;
+    }
 
     /**
      * Parse date from various formats
      * @param value - Date value to parse
      * @returns Parsed date or current date if invalid
      */
-    // private parseDate(value: string | Date | undefined): Date {
-    //     if (!value) {
-    //         return new Date();
-    //     }
+    private parseDate(value: string | Date | undefined): Date {
+        if (!value) {
+            return new Date();
+        }
 
-    //     if (value instanceof Date) {
-    //         return value;
-    //     }
+        if (value instanceof Date) {
+            return value;
+        }
 
-    //     // Try parsing as ISO string or timestamp
-    //     const date = new Date(value);
-    //     return isNaN(date.getTime()) ? new Date() : date;
-    // }
+        // Try parsing as ISO string or timestamp
+        const date = new Date(value);
+        return isNaN(date.getTime()) ? new Date() : date;
+    }
 
     /**
      * Generate fallback ID if post doesn't have one
      * @param post - Post data
      * @returns Generated fallback ID
      */
-    // private generateFallbackId(post: LinkedInPost): string {
-    //     const urlHash = Buffer.from(post.url || post.post_url || String(Date.now()))
-    //         .toString('base64')
-    //         .substring(0, 32);
-    //     return `linkedin_${urlHash}`;
-    // }
+    private generateFallbackId(post: any): string {
+        const urlHash = Buffer.from(post.url || post.post_url || String(Date.now()))
+            .toString('base64')
+            .substring(0, 32);
+        return `linkedin_${urlHash}`;
+    }
 
     /**
      * Extract the target user_id from the posts

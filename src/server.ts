@@ -13,8 +13,9 @@ import { PostController } from './controllers/postController';
 import { InfluencerController } from './controllers/influencerController';
 import { SubscriptionController } from './controllers/subscriptionController';
 import { OrganizationController } from './controllers/organizationController';
+import { ScrapJobController } from './controllers/scrapJobController';
 import { authenticate } from './middleware/auth';
-
+import { ScrapWebhookPubsubConsumer } from './pubsub/scrapWebhookPubsubConsumer';
 
 class Server {
     private app: express.Application;
@@ -45,6 +46,10 @@ class Server {
         this.setupRoutes();
         this.setupErrorHandler();
         this.startServer();
+
+        // Start scrap webhook pubsub consumer.
+        console.log("gcloud credentials:", EnvConfig.get('GOOGLE_APPLICATION_CREDENTIALS'));
+        ScrapWebhookPubsubConsumer.startListener();
     }
 
     private setupMiddleware() {
@@ -105,6 +110,7 @@ class Server {
         routes.use('/posts', authenticate, new PostController().buildRouter());
         routes.use('/subscription', authenticate, new SubscriptionController().buildRouter());
         routes.use('/organization', authenticate, new OrganizationController().buildRouter());
+        routes.use('/scrap-jobs', authenticate, new ScrapJobController().buildRouter());
 
         // Health check
         routes.get('/health', (req, res) => {

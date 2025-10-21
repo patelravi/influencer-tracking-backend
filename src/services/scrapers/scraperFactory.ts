@@ -17,13 +17,11 @@ export class ScraperFactory {
      * @returns IScraper instance for the platform
      * @throws Error if platform is not supported
      */
-    static getScraper(platform: string): IScraper {
-        // Normalize platform name
-        const normalizedPlatform = this.normalizePlatform(platform);
+    static getScraper(platform: 'LinkedIn' | 'X'): IScraper {
 
         // Return cached instance if available
-        if (this.scrapers.has(normalizedPlatform)) {
-            return this.scrapers.get(normalizedPlatform)!;
+        if (this.scrapers.has(platform)) {
+            return this.scrapers.get(platform)!;
         }
 
         // Create new instance based on platform
@@ -44,45 +42,9 @@ export class ScraperFactory {
         }
 
         // Cache the instance for future use
-        this.scrapers.set(normalizedPlatform, scraper);
-        Logger.info(`Created ${normalizedPlatform} scraper instance`);
+        this.scrapers.set(platform, scraper);
+        Logger.info(`Created ${platform} scraper instance`);
 
         return scraper;
-    }
-
-    /**
-     * Get all supported platforms
-     * @returns Array of supported platform names
-     */
-    static getSupportedPlatforms(): string[] {
-        return [PlatformType.LinkedIn, PlatformType.X];
-    }
-
-    /**
-     * Check if a platform is supported
-     * @param platform - Platform name to check
-     * @returns True if platform is supported, false otherwise
-     */
-    static isPlatformSupported(platform: string): boolean {
-        const normalizedPlatform = this.normalizePlatform(platform);
-        return this.getSupportedPlatforms().includes(normalizedPlatform);
-    }
-
-    /**
-     * Clear all cached scraper instances
-     * Useful for testing or when you need fresh instances
-     */
-    static clearCache(): void {
-        this.scrapers.clear();
-        Logger.info('Scraper cache cleared');
-    }
-
-    /**
-     * Normalize platform name for consistent comparison
-     * @param platform - Platform name to normalize
-     * @returns Normalized platform name
-     */
-    private static normalizePlatform(platform: string): string {
-        return platform.toLowerCase().replace(/[^a-z0-9]/g, '');
     }
 }

@@ -85,6 +85,7 @@ export class PostController {
     private syncPosts = async (req: Request, res: Response): Promise<void> => {
         try {
             const { influencerId } = req.body;
+            const userId = (req as any).userId;
             const organizationId = (req as any).organizationId;
             const postSyncService = new PostSyncService();
 
@@ -105,7 +106,7 @@ export class PostController {
             }
 
             // Sync single influencer
-            await postSyncService.initPostSync(influencerId);
+            await postSyncService.initPostSync(influencerId, { organizationId, userId });
             Logger.info(`Synced posts for influencer ${influencerId}`);
 
             res.json({

@@ -77,6 +77,7 @@ export class InfluencerService {
 
 
     async addInfluencer(data: AddInfluencerData): Promise<void> {
+
         const { name, platform, profileUrl, userId, organizationId } = data;
 
         // Validate required fields
@@ -117,11 +118,11 @@ export class InfluencerService {
 
         // Sync both posts and profile data in background
         const postSyncService = new PostSyncService();
-        await postSyncService.initPostSync(String(influencer._id));
+        await postSyncService.initPostSync(String(influencer._id), { organizationId, userId });
 
         // Sync profiles as well.
         const profileSyncService = new ProfileSyncService();
-        await profileSyncService.initProfileSync(String(influencer._id));
+        await profileSyncService.initProfileSync(String(influencer._id), { organizationId, userId });
     }
 
     async getInfluencers(organizationId: string): Promise<InfluencerResult> {
@@ -203,7 +204,7 @@ export class InfluencerService {
 
             // Trigger sync in the background
             const postSyncService = new PostSyncService();
-            await postSyncService.initPostSync(String(influencer._id));
+            await postSyncService.initPostSync(String(influencer._id), { organizationId, userId: String(influencer.userId) });
 
             Logger.info(`Post sync started for ${influencer.name} (${influencer.platform})`);
         } catch (error) {
@@ -236,7 +237,10 @@ export class InfluencerService {
 
             // Trigger complete sync in the background
             const postSyncService = new ProfileSyncService();
-            await postSyncService.initProfileSync(String(influencer._id));
+            await postSyncService.initProfileSync(String(influencer._id), {
+                organizationId,
+                userId: String(influencer.userId),
+            });
 
         } catch (error) {
             Logger.error('Sync influencer data error:', error);
