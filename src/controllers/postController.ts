@@ -17,7 +17,7 @@ export class PostController {
         router.get('/analytics', this.getAnalytics.bind(this));
 
         // Sync posts manually (for any authenticated user)
-        router.post('/sync', this.syncPosts.bind(this));
+        router.post('/sync-posts', this.syncPosts.bind(this));
 
         return router;
     }

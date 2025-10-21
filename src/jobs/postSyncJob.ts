@@ -35,12 +35,6 @@ export class PostSyncJob {
                             await postSyncService.syncAllInfluencerData();
                             break;
 
-                        case 'sync-influencer-data': {
-                            const { influencerId } = job.data;
-                            await postSyncService.syncInfluencerData(influencerId);
-                            break;
-                        }
-
                         default:
                             Logger.warn(`Unknown job type: ${job.name}`);
                     }

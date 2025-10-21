@@ -6,7 +6,6 @@ let bodyParser = require('body-parser');
 
 // Set detault timezone to utc
 process.env.TZ = 'UTC';
-process.env.GOOGLE_APPLICATION_CREDENTIALS = 'gcloud-credentials.json';
 
 // Init pubsub.
 let topic = 'projects/buzzhq/topics/scrapp-result-webhook';

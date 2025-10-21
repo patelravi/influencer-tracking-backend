@@ -9,8 +9,8 @@ export class InfluencerController {
         router.post('/', checkInfluencerLimit, this.addInfluencer.bind(this));
         router.get('/', this.getInfluencers.bind(this));
         router.delete('/:id', this.deleteInfluencer.bind(this));
-        router.post('/:id/sync', this.syncPosts.bind(this));
-        router.post('/:id/sync-data', this.syncProfile.bind(this));
+        router.post('/:id/sync-posts', this.syncPosts.bind(this));
+        router.post('/:id/sync-profile', this.syncProfile.bind(this));
         router.get('/:id/sync-status', this.getSyncStatus.bind(this));
 
         return router;

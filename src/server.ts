@@ -14,6 +14,7 @@ import { InfluencerController } from './controllers/influencerController';
 import { SubscriptionController } from './controllers/subscriptionController';
 import { OrganizationController } from './controllers/organizationController';
 import { authenticate } from './middleware/auth';
+import { ScrappingResultWebhookController } from './controllers/scrappingResultWebhookController';
 
 
 class Server {
@@ -105,6 +106,7 @@ class Server {
         routes.use('/posts', authenticate, new PostController().buildRouter());
         routes.use('/subscription', authenticate, new SubscriptionController().buildRouter());
         routes.use('/organization', authenticate, new OrganizationController().buildRouter());
+        routes.use('/webhook', new ScrappingResultWebhookController().buildRouter());
 
         // Health check
         routes.get('/health', (req, res) => {
