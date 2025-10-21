@@ -28,9 +28,13 @@ app.use(
   })
 );
 
-app.post('/scrap-webhook', async (req, res) => {
+app.post('/scrap-webhook/:jobId', async (req, res) => {
   try {
-    let payload = JSON.stringify(req.body ? req.body : {});
+    let payload = JSON.stringify({
+      params: req.params,
+      body: req.body ? req.body : {},
+      timestamp: new Date().toISOString(),
+    });
     console.log('Pushing webhook payload to pubsub', payload);
     await producer.publish(Buffer.from(payload));
 
