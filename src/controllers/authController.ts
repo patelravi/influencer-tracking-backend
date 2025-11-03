@@ -1,5 +1,6 @@
 import { Request, Response, Router } from 'express';
 import bcrypt from 'bcryptjs';
+import crypto from 'crypto';
 import { UserModel } from '../models/UserModel';
 import { OrganizationModel } from '../models/OrganizationModel';
 import { OrganizationMemberModel } from '../models/OrganizationMemberModel';
@@ -7,6 +8,7 @@ import { SubscriptionModel } from '../models/SubscriptionModel';
 import { generateAccessToken, generateRefreshToken, verifyRefreshToken } from '../utils/jwt';
 import { Logger } from '../utils/logger';
 import { authenticate } from '../middleware/auth';
+import { sendPasswordResetEmail } from '../services/emailService';
 
 export class AuthController {
     public buildRouter(): Router {
@@ -17,6 +19,7 @@ export class AuthController {
         router.post('/login', this.login.bind(this));
         router.post('/refresh', this.refresh.bind(this));
         router.post('/forgot-password', this.forgotPassword.bind(this));
+        router.post('/reset-password', this.resetPassword.bind(this));
 
         // Protected routes (require authentication)
         router.post('/switch-organization', authenticate, this.switchOrganization.bind(this));
@@ -319,12 +322,82 @@ export class AuthController {
                 return;
             }
 
-            // TODO: Generate password reset token and send email
-            // For now, just log it
-            Logger.info(`Password reset requested for: ${email}`);
+            // Generate password reset token
+            const resetToken = crypto.randomBytes(32).toString('hex');
+            const resetTokenHash = crypto.createHash('sha256').update(resetToken).digest('hex');
+            
+            // Set token expiration (1 hour from now)
+            const resetExpires = new Date();
+            resetExpires.setHours(resetExpires.getHours() + 1);
+
+            // Save token to user
+            user.passwordResetToken = resetTokenHash;
+            user.passwordResetExpires = resetExpires;
+            await user.save();
+
+            // Send password reset email
+            try {
+                await sendPasswordResetEmail({
+                    email: user.email,
+                    resetToken,
+                    userName: user.name,
+                });
+                Logger.info(`Password reset email sent to: ${email}`);
+            } catch (emailError) {
+                Logger.error('Failed to send password reset email:', emailError);
+                // Don't throw error here - we already returned success to prevent enumeration
+            }
         } catch (error) {
             Logger.error('Forgot password error:', error);
             res.status(500).json({ error: 'Password reset request failed' });
+        }
+    };
+
+    private resetPassword = async (req: Request, res: Response): Promise<void> => {
+        try {
+            const { token, password } = req.body;
+
+            if (!token || !password) {
+                res.status(400).json({ error: 'Token and password are required' });
+                return;
+            }
+
+            if (password.length < 6) {
+                res.status(400).json({ error: 'Password must be at least 6 characters' });
+                return;
+            }
+
+            // Hash the token to compare with stored token
+            const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
+
+            // Find user with valid reset token
+            const user = await UserModel.findOne({
+                passwordResetToken: tokenHash,
+                passwordResetExpires: { $gt: new Date() },
+            });
+
+            if (!user) {
+                res.status(400).json({ error: 'Invalid or expired reset token' });
+                return;
+            }
+
+            // Hash new password
+            const passwordHash = await bcrypt.hash(password, 10);
+
+            // Update user password and clear reset token
+            user.passwordHash = passwordHash;
+            user.passwordResetToken = undefined;
+            user.passwordResetExpires = undefined;
+            await user.save();
+
+            Logger.info(`Password reset successful for user: ${user.email}`);
+
+            res.json({
+                message: 'Password reset successful',
+            });
+        } catch (error) {
+            Logger.error('Reset password error:', error);
+            res.status(500).json({ error: 'Password reset failed' });
         }
     }
 }

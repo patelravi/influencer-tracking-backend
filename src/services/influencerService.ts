@@ -136,6 +136,70 @@ export class InfluencerService {
         };
     }
 
+    async updateInfluencer(
+        influencerId: string,
+        organizationId: string,
+        data: { name?: string; platform?: string; profileUrl?: string }
+    ): Promise<void> {
+        try {
+            // Find influencer within the organization
+            const influencer = await InfluencerModel.findOne({
+                _id: influencerId,
+                organizationId,
+            });
+
+            if (!influencer) {
+                throw new Error('Influencer not found');
+            }
+
+            // If platform or profileUrl is being updated, validate and extract handle
+            if (data.platform || data.profileUrl) {
+                const platform = data.platform || influencer.platform;
+                const profileUrl = data.profileUrl || (influencer.handle ? `https://${platform.toLowerCase()}.com/${influencer.handle}` : '');
+
+                if (!this.validateRequiredFields(platform, profileUrl)) {
+                    throw new Error('Platform and profile URL are required when updating either field');
+                }
+
+                if (!this.validatePlatform(platform)) {
+                    throw new Error('Invalid platform.');
+                }
+
+                // Extract handle from profile URL
+                const handle = this.extractHandle(platform, profileUrl);
+
+                // Check for duplicates (but exclude current influencer)
+                const duplicate = await InfluencerModel.findOne({
+                    _id: { $ne: influencerId },
+                    organizationId,
+                    platform,
+                    handle,
+                });
+
+                if (duplicate) {
+                    throw new Error('This influencer is already being tracked by your organization.');
+                }
+
+                // Update handle and platform if provided
+                influencer.platform = platform as PlatformType;
+                influencer.handle = handle;
+            }
+
+            // Update name if provided
+            if (data.name) {
+                influencer.name = data.name;
+            }
+
+            // Save the updated influencer
+            await influencer.save();
+
+            Logger.info(`Influencer updated: ${influencer.name}`);
+        } catch (error) {
+            Logger.error('Update influencer error:', error);
+            throw error;
+        }
+    }
+
     async deleteInfluencer(influencerId: string, organizationId: string): Promise<void> {
         try {
             // Find influencer within the organization

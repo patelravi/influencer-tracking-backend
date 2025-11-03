@@ -8,6 +8,7 @@ export class InfluencerController {
 
         router.post('/', checkInfluencerLimit, this.addInfluencer.bind(this));
         router.get('/', this.getInfluencers.bind(this));
+        router.put('/:id', this.updateInfluencer.bind(this));
         router.delete('/:id', this.deleteInfluencer.bind(this));
         router.post('/:id/sync-posts', this.syncPosts.bind(this));
         router.post('/:id/sync-profile', this.syncProfile.bind(this));
@@ -51,6 +52,26 @@ export class InfluencerController {
         } catch (error) {
             console.error('Get influencers error:', error);
             res.status(500).json({ error: 'Failed to fetch influencers' });
+        }
+    };
+
+    private updateInfluencer = async (req: Request, res: Response): Promise<void> => {
+        try {
+            const { id } = req.params;
+            const { name, platform, profileUrl } = req.body;
+            const organizationId = (req as any).organizationId!;
+
+            const influencerService = new InfluencerService();
+            await influencerService.updateInfluencer(id, organizationId, {
+                name,
+                platform,
+                profileUrl,
+            });
+
+            res.status(200).json({ message: 'Influencer updated successfully' });
+        } catch (error) {
+            console.error('Update influencer error:', error);
+            res.status(500).json({ error: error instanceof Error ? error.message : 'Failed to update influencer' });
         }
     };
 

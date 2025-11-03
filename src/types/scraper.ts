@@ -2,8 +2,6 @@
  * Common data structures for scrapers
  */
 
-import { IScrapJob } from "../models/ScrapJobModel";
-
 export interface ProfileData {
     name: string;
     avatarUrl?: string;
@@ -22,7 +20,7 @@ export interface PostData {
     likes: number;
     comments: number;
     shares: number;
-    postedAt: Date;
+    postedAt: number; // Epoch timestamp in milliseconds
     mediaUrls: string[];
 }
 

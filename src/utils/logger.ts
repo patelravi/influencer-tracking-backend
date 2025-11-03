@@ -26,6 +26,18 @@ export class Logger {
 
     // Route calls to pino ensuring objects are in the first position per pino API
     private static route(method: keyof PinoLogger, args: unknown[]): void {
+        // Guard against uninitialized logger - can happen during module loading
+        if (!this.logger) {
+            // Use console as fallback until logger is initialized
+            const [first, ...rest] = args;
+            if (rest.length > 0) {
+                console.log(`[${method.toString().toUpperCase()}]`, first, ...rest);
+            } else {
+                console.log(`[${method.toString().toUpperCase()}]`, first);
+            }
+            return;
+        }
+
         const [first, second, ...rest] = args;
 
         const isFirstString = typeof first === 'string';
@@ -91,6 +103,9 @@ export class Logger {
     }
 
     public static child(bindings: Record<string, unknown>) {
+        if (!this.logger) {
+            throw new Error('Logger must be initialized before calling child()');
+        }
         return this.logger.child(bindings);
     }
 }

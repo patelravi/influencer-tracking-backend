@@ -35,16 +35,48 @@ export class ScrapperWebhookHandler {
                     }
                 }
             } else if (scrapJob.jobType == 'posts') {
-                for (let i = 0; i < payload.length; i++) {
-                    const postsData = scrapper.parsePostData(payload[i]);
+                const service = new PostSyncService();
+                let processedCount = 0;
+                
+                // Handle different payload structures from BrightData
+                // BrightData might send an array of posts directly, or nested structures
+                if (!Array.isArray(payload)) {
+                    Logger.warn(logPrefix, `Expected array payload for posts, got: ${typeof payload}`);
+                    // Try to parse as single post
+                    const postsData = scrapper.parsePostData(payload);
                     if (postsData) {
-                        const service = new PostSyncService();
                         await service.syncScrapedPostData(scrapJob.influencerId.toString(), postsData);
-                        Logger.info(`Posts sync completed for ${scrapJob.influencerId}`);
-                    } else {
-                        Logger.error(logPrefix, `Posts data ignored for job ${jobId}.`);
+                        processedCount++;
+                    }
+                } else {
+                    // Process each item in the payload array
+                    for (let i = 0; i < payload.length; i++) {
+                        const item = payload[i];
+                        
+                        // Check if item is an array of posts (nested structure)
+                        if (Array.isArray(item)) {
+                            // Process each post in the nested array
+                            for (const post of item) {
+                                const postsData = scrapper.parsePostData(post);
+                                if (postsData) {
+                                    await service.syncScrapedPostData(scrapJob.influencerId.toString(), postsData);
+                                    processedCount++;
+                                }
+                            }
+                        } else {
+                            // Item is a single post object
+                            const postsData = scrapper.parsePostData(item);
+                            if (postsData) {
+                                await service.syncScrapedPostData(scrapJob.influencerId.toString(), postsData);
+                                processedCount++;
+                            } else {
+                                Logger.warn(logPrefix, `Post data at index ${i} could not be parsed for job ${jobId}`);
+                            }
+                        }
                     }
                 }
+                
+                Logger.info(logPrefix, `Processed ${processedCount} posts for influencer ${scrapJob.influencerId} in job ${jobId}`);
             }
 
 

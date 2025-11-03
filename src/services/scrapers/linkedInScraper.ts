@@ -1,5 +1,5 @@
 import axios from 'axios';
-import moment from 'moment';
+// import moment from 'moment';
 import { IScraper, PostData, ProfileData, ScrapJobContext } from '../../types/scraper';
 import { EnvConfig } from '../../utils/config';
 import { Logger } from '../../utils/logger';
@@ -189,6 +189,7 @@ export class LinkedInScraper extends ScrapperServiceBase implements IScraper {
             format: 'json',
             type: 'discover_new',
             'discover_by': 'profile_url',
+            // Removed limit_multiple_results to allow fetching all posts within date range
 
             include_errors: 'true',
 
@@ -199,6 +200,10 @@ export class LinkedInScraper extends ScrapperServiceBase implements IScraper {
             notify: 'true',
         }).toString();
 
+        // Set date range to last month (30 days) to ensure all recent posts are synced
+        // const endDate = moment().format('YYYY-MM-DD') + 'T23:59:59.999Z';
+        // const startDate = moment().subtract(30, 'days').format('YYYY-MM-DD') + 'T00:00:00.000Z';
+
         const options = {
             method: 'POST',
             url: `${this.webScraperUrl}/trigger?${queryParams}`,
@@ -208,13 +213,14 @@ export class LinkedInScraper extends ScrapperServiceBase implements IScraper {
             },
             data: JSON.stringify([{
                 url: profileUrl,
-                start_date: moment().subtract(1, 'year').format('YYYY-MM-DD') + 'T00:00:00.000Z',
-                end_date: moment().format('YYYY-MM-DD') + 'T23:59:59.999Z'
+                // start_date: startDate,
+                // end_date: endDate
             }]),
             timeout: this.requestTimeout,
         };
 
-        Logger.info("Start: Hit Post Scrap Api:", JSON.stringify(options));
+        // Logger.info(`Start: Hit Post Scrap Api for ${profileUrl}. Date range: ${startDate} to ${endDate}`, JSON.stringify(options));
+        Logger.info(`Start: Hit Post Scrap Api for ${profileUrl}.`, JSON.stringify(options));
         const response = await axios(options);
         const snapshotId = response.data.snapshot_id;
         Logger.info("End: Hit Post Scrap Api:", JSON.stringify(response.data));
@@ -295,7 +301,7 @@ export class LinkedInScraper extends ScrapperServiceBase implements IScraper {
             likes: this._parseNumber(post.likes || post.reactions || post.like_count),
             comments: this._parseNumber(post.comments || post.num_comments || post.comment_count),
             shares: this._parseNumber(post.shares || post.reposts || post.share_count),
-            postedAt: this.parseDate(post.posted_at || post.created_at || post.timestamp),
+            postedAt: this.parseDate(post.posted_at || post.date_posted || post.timestamp),
             mediaUrls: this._parseMediaUrls(post),
         };
     }
@@ -359,22 +365,28 @@ export class LinkedInScraper extends ScrapperServiceBase implements IScraper {
     }
 
     /**
-     * Parse date from various formats
+     * Parse date from various formats and return as epoch timestamp in milliseconds
      * @param value - Date value to parse
-     * @returns Parsed date or current date if invalid
+     * @returns Epoch timestamp in milliseconds, or current time if invalid
      */
-    private parseDate(value: string | Date | undefined): Date {
+    private parseDate(value: string | Date | number | undefined): number {
         if (!value) {
-            return new Date();
+            return Date.now();
         }
 
         if (value instanceof Date) {
-            return value;
+            return value.getTime();
+        }
+
+        if (typeof value === 'number') {
+            // If it's already a number, check if it's in seconds or milliseconds
+            // Assume milliseconds if > year 2000 in ms, otherwise assume seconds
+            return value > 946684800000 ? value : value * 1000;
         }
 
         // Try parsing as ISO string or timestamp
         const date = new Date(value);
-        return isNaN(date.getTime()) ? new Date() : date;
+        return isNaN(date.getTime()) ? Date.now() : date.getTime();
     }
 
     /**
